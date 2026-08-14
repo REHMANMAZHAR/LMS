@@ -1,0 +1,2 @@
+FAMILY_ACCESS_CODE=replace-with-a-private-passphrase-of-at-least-12-characters
+SESSION_SIGNING_SECRET=replace-with-at-least-32-random-characters
