@@ -39,6 +39,22 @@ export const activity = sqliteTable("activity", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const assessmentAttempts = sqliteTable("assessment_attempts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  familyId: text("family_id").notNull().default("talha-family"),
+  topicId: text("topic_id"),
+  subject: text("subject").notNull(),
+  assessmentType: text("assessment_type").notNull().default("Topical practice"),
+  paper: text("paper"),
+  timed: integer("timed", { mode: "boolean" }).notNull().default(false),
+  score: integer("score").notNull(),
+  maxScore: integer("max_score").notNull(),
+  minutes: integer("minutes"),
+  errorCategory: text("error_category"),
+  note: text("note"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const loginAttempts = sqliteTable("login_attempts", {
   key: text("key").primaryKey(),
   attempts: integer("attempts").notNull().default(0),

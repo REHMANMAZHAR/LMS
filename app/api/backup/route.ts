@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { requireFamilySession } from "@/app/family-auth";
 import { getDb } from "@/db";
-import { activity, progress, settings } from "@/db/schema";
+import { activity, assessmentAttempts, progress, settings } from "@/db/schema";
 
 const FAMILY_ID = "talha-family";
 
@@ -9,7 +9,7 @@ export async function GET() {
   try {
     await requireFamilySession();
     const db = await getDb();
-    const [progressRows, settingRows, activityRows] = await Promise.all([
+    const [progressRows, settingRows, activityRows, attemptRows] = await Promise.all([
       db.select().from(progress).where(eq(progress.familyId, FAMILY_ID)),
       db.select().from(settings).where(eq(settings.familyId, FAMILY_ID)),
       db
@@ -17,16 +17,22 @@ export async function GET() {
         .from(activity)
         .where(eq(activity.familyId, FAMILY_ID))
         .orderBy(desc(activity.createdAt), desc(activity.id)),
+      db
+        .select()
+        .from(assessmentAttempts)
+        .where(eq(assessmentAttempts.familyId, FAMILY_ID))
+        .orderBy(desc(assessmentAttempts.createdAt), desc(assessmentAttempts.id)),
     ]);
     const date = new Date().toISOString().slice(0, 10);
     return new Response(
       JSON.stringify(
         {
-          format: "talha-cie-study-backup-v1",
+          format: "talha-cie-study-backup-v2",
           exportedAt: new Date().toISOString(),
           progress: progressRows,
           settings: settingRows,
           activity: activityRows,
+          assessmentAttempts: attemptRows,
         },
         null,
         2,

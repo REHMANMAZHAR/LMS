@@ -1,7 +1,14 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { activity, progress, settings } from "@/db/schema";
+import { activity, assessmentAttempts, progress, settings } from "@/db/schema";
 import { requireFamilySession } from "@/app/family-auth";
+import { SUBJECTS, TOPICS, type SubjectName } from "@/app/data";
+import {
+  ASSESSMENT_TYPES,
+  ERROR_CATEGORIES,
+  evidenceForTopic,
+  subjectThreshold,
+} from "@/app/learning-model";
 
 const FAMILY_ID = "talha-family";
 const SETTING_KEYS = new Set([
@@ -11,6 +18,9 @@ const SETTING_KEYS = new Set([
   "studyDays",
   "studentMode",
 ]);
+const VALID_SUBJECTS = new Set<string>(SUBJECTS);
+const VALID_ASSESSMENT_TYPES = new Set<string>(ASSESSMENT_TYPES);
+const VALID_ERROR_CATEGORIES = new Set<string>(ERROR_CATEGORIES);
 
 async function requireApiUser() {
   return requireFamilySession();
@@ -28,7 +38,7 @@ export async function GET() {
   try {
     await requireApiUser();
     const db = await getDb();
-    const [progressRows, settingRows, activityRows] = await Promise.all([
+    const [progressRows, settingRows, activityRows, attemptRows] = await Promise.all([
       db.select().from(progress).where(eq(progress.familyId, FAMILY_ID)),
       db.select().from(settings).where(eq(settings.familyId, FAMILY_ID)),
       db
@@ -37,12 +47,19 @@ export async function GET() {
         .where(eq(activity.familyId, FAMILY_ID))
         .orderBy(desc(activity.createdAt), desc(activity.id))
         .limit(160),
+      db
+        .select()
+        .from(assessmentAttempts)
+        .where(eq(assessmentAttempts.familyId, FAMILY_ID))
+        .orderBy(desc(assessmentAttempts.createdAt), desc(assessmentAttempts.id))
+        .limit(240),
     ]);
 
     return Response.json({
       progress: progressRows,
       settings: Object.fromEntries(settingRows.map((row) => [row.key, row.value])),
       activity: activityRows,
+      attempts: attemptRows,
     });
   } catch (error) {
     return errorResponse(error);
@@ -115,16 +132,63 @@ export async function PATCH(request: Request) {
     if (actionName === "test") {
       const topicId = String(payload.topicId ?? "").slice(0, 100);
       const subject = String(payload.subject ?? "").slice(0, 60);
+      const assessmentType = String(payload.assessmentType ?? "Topical practice");
+      const paper = String(payload.paper ?? "").trim().slice(0, 100);
+      const timed = payload.timed === true;
       const score = Number(payload.score);
       const maxScore = Number(payload.maxScore);
       const minutes = Math.max(0, Math.min(600, Number(payload.minutes ?? 0)));
+      const errorCategory = String(payload.errorCategory ?? "No major error");
       const note = String(payload.note ?? "").trim().slice(0, 300);
-      if (!topicId || !Number.isFinite(score) || !Number.isFinite(maxScore) || maxScore <= 0 || score < 0 || score > maxScore) {
+      const topicMatchesSubject = TOPICS.some(
+        (topic) => topic.id === topicId && topic.subject === subject,
+      );
+      if (
+        !topicId ||
+        !topicMatchesSubject ||
+        !VALID_SUBJECTS.has(subject) ||
+        !VALID_ASSESSMENT_TYPES.has(assessmentType) ||
+        !VALID_ERROR_CATEGORIES.has(errorCategory) ||
+        !Number.isFinite(score) ||
+        !Number.isFinite(maxScore) ||
+        maxScore <= 0 ||
+        score < 0 ||
+        score > maxScore
+      ) {
         return Response.json({ error: "Enter a valid test score." }, { status: 400 });
       }
       const percentage = Math.round((score / maxScore) * 100);
-      const awardedStage = percentage >= 80 ? 3 : percentage >= 60 ? 2 : 1;
       const now = new Date().toISOString();
+      const threshold = subjectThreshold(subject as SubjectName);
+      const previousAttempts = await db
+        .select({ score: assessmentAttempts.score, maxScore: assessmentAttempts.maxScore, timed: assessmentAttempts.timed, createdAt: assessmentAttempts.createdAt })
+        .from(assessmentAttempts)
+        .where(and(eq(assessmentAttempts.familyId, FAMILY_ID), eq(assessmentAttempts.topicId, topicId)));
+      const evidence = evidenceForTopic(
+        [
+          ...previousAttempts.map((attempt) => ({ ...attempt, topicId })),
+          { topicId, score, maxScore, timed, createdAt: now },
+        ],
+        topicId,
+        subject as SubjectName,
+      );
+      const secure = evidence.secure;
+      const awardedStage = percentage >= threshold ? (secure ? 3 : 2) : percentage >= 60 ? 2 : 1;
+
+      await db.insert(assessmentAttempts).values({
+        familyId: FAMILY_ID,
+        topicId,
+        subject,
+        assessmentType,
+        paper: paper || null,
+        timed,
+        score,
+        maxScore,
+        minutes: minutes || null,
+        errorCategory,
+        note: note || null,
+        createdAt: now,
+      });
       await db
         .insert(progress)
         .values({
@@ -153,10 +217,19 @@ export async function PATCH(request: Request) {
         score,
         maxScore,
         minutes: minutes || null,
-        note: note || `Recorded by ${user.displayName}`,
+        note: note || `${assessmentType} recorded by ${user.displayName}`,
         createdAt: now,
       });
-      return Response.json({ ok: true, percentage, awardedStage, updatedAt: now });
+      return Response.json({
+        ok: true,
+        percentage,
+        awardedStage,
+        threshold,
+        secure,
+        evidencePasses: evidence.passes,
+        hasTimedPass: evidence.hasTimed,
+        updatedAt: now,
+      });
     }
 
     if (actionName === "removeTest") {

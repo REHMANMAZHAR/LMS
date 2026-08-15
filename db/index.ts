@@ -32,6 +32,23 @@ CREATE TABLE IF NOT EXISTS activity (
   note TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS assessment_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  family_id TEXT NOT NULL DEFAULT 'talha-family',
+  topic_id TEXT,
+  subject TEXT NOT NULL,
+  assessment_type TEXT NOT NULL DEFAULT 'Topical practice',
+  paper TEXT,
+  timed INTEGER NOT NULL DEFAULT 0,
+  score INTEGER NOT NULL,
+  max_score INTEGER NOT NULL,
+  minutes INTEGER,
+  error_category TEXT,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS assessment_family_topic_idx
+  ON assessment_attempts (family_id, topic_id, created_at);
 CREATE TABLE IF NOT EXISTS login_attempts (
   key TEXT PRIMARY KEY NOT NULL,
   attempts INTEGER NOT NULL DEFAULT 0,
@@ -52,13 +69,11 @@ export async function getDb() {
   const binding = env.DB as Parameters<typeof drizzle>[0] & {
     exec(query: string): Promise<unknown>;
   };
-  const statements = INITIAL_SCHEMA
-  .split(";")
-  .map((statement) => statement.trim())
-  .filter(Boolean)
-  .map((statement) => binding.prepare(statement));
-
-schemaReady ??= binding.batch(statements);
+  const statements = INITIAL_SCHEMA.split(";")
+    .map((statement) => statement.trim())
+    .filter(Boolean)
+    .map((statement) => binding.prepare(statement));
+  schemaReady ??= binding.batch(statements);
   await schemaReady;
 
   return drizzle(binding, { schema });

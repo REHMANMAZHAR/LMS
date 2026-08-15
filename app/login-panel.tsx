@@ -57,26 +57,11 @@ export default function LoginPanel() {
               required
             />
           </label>
-          <label style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginTop: 10,
-            color: "#566863",
-            cursor: "pointer",
-            fontSize: 11,
-          }}>
+          <label className="show-code-label">
             <input
               type="checkbox"
               checked={showCode}
               onChange={(event) => setShowCode(event.target.checked)}
-              style={{
-                width: 16,
-                height: 16,
-                margin: 0,
-                padding: 0,
-                accentColor: "#174b43",
-              }}
             />
             Show family access code
           </label>

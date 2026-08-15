@@ -385,9 +385,8 @@ export const TOPICS: Topic[] = [
   ...islamiyatTopics,
 ];
 
-export const STAGES = ["Not started", "Learned", "Practised", "Mastered"] as const;
+export const STAGES = ["Not started", "Learning", "Practising", "Secure"] as const;
 
 export function youtubeSearchUrl(topic: Topic) {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(topic.resourceQuery)}`;
 }
-
