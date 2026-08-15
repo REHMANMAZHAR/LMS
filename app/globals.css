@@ -104,7 +104,8 @@ a { color:inherit; }
 .topic-detail p { color:var(--muted); font-size:10px; line-height:1.5; margin:5px 0 0; }
 .topic-detail a { grid-column:1/-1; color:#285fa0; font-size:10px; font-weight:700; }
 .topic-actions { display:flex; flex-direction:column; align-items:end; justify-content:space-between; gap:8px; }
-.topic-actions button { border:0; background:transparent; color:#52736d; cursor:pointer; font-size:9px; font-weight:800; }
+.topic-actions button { min-height:32px; border:0; border-radius:8px; background:transparent; color:#52736d; cursor:pointer; padding:6px 9px; font-size:11px; font-weight:800; }
+.topic-actions button:hover,.topic-actions button:focus-visible { background:#eaf1ef; color:#174b43; }
 .status-pill { border:1px solid #d5d0c5; color:#7a837f; border-radius:20px; padding:5px 8px; font-size:8px; white-space:nowrap; }
 .status-pill.learned { background:#fbefd9; border-color:#ead2a4; color:#926928; } .status-pill.practised { background:#e6f0ed; border-color:#bdd8d1; color:#3f7067; } .status-pill.mastered { background:#dceee8; border-color:#afd5c9; color:#186955; }
 .empty-message { width:100%; padding:28px; text-align:center; border:1px dashed #cfc8ba; border-radius:14px; color:var(--muted); font-size:11px; }
