@@ -108,7 +108,7 @@ function relativeAge(value: string | null) {
 function greetingForLocalTime() {
   const hour = new Date().getHours();
   if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
+  if (hour < 17) return "Good Afternoon";
   return "Good evening";
 }
 
@@ -311,7 +311,7 @@ export default function StudyDashboard({
         stage: safeStage,
         minutes: safeStage > (existing?.stage ?? 0) ? Math.max(15, Math.round(topic.minutes * 0.35)) : 0,
       });
-      setMessage("Progress saved and synchronized.");
+      setMessage(safeStage === 0 ? "Topic reset to Not started." : "Progress saved and synchronized.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The update was not saved.");
     } finally {
@@ -434,7 +434,7 @@ export default function StudyDashboard({
             <div className="topic-list">
               {filteredTopics.map((topic) => {
                 const item = progressMap.get(topic.id); const topicStage = item?.stage ?? 0; const open = expanded === topic.id;
-                return <article className="topic-row" key={topic.id}><button className={`stage-button ${stageClass(topicStage)}`} onClick={() => updateStage(topic, topicStage === 3 ? 3 : topicStage + 1)} aria-label={`Update ${topic.title}`}><span>{topicStage === 0 ? "" : topicStage === 3 ? "★" : "✓"}</span></button><div className="topic-main"><div className="topic-kicker"><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><span>{topic.code}</span><span>{topic.unit}</span></div><h3>{topic.title}</h3><div className="topic-meta"><span>{importanceLabel(topic.importance)}</span><span>{topic.paper}</span><span>{topic.minutes} min</span><span>{item?.bestScore != null ? `Best ${item.bestScore}%` : "No test yet"}</span></div>{open && <div className="topic-detail"><div><strong>Examiner habit</strong><p>{topic.tip}</p></div><div><strong>Past-paper evidence</strong><p>Paper coverage is shown. Exact appearance counts will only be added after paper-by-paper tagging; no frequency has been guessed.</p></div><a href={youtubeSearchUrl(topic)} target="_blank" rel="noreferrer">Find a topic lesson on YouTube ↗</a></div>}</div><div className="topic-actions"><span className={`status-pill ${stageClass(topicStage)}`}>{STAGES[topicStage]}</span><button onClick={() => setExpanded(open ? null : topic.id)}>{open ? "Close" : "Help"}</button></div></article>;
+                return <article className="topic-row" key={topic.id}><button className={`stage-button ${stageClass(topicStage)}`} onClick={() => updateStage(topic, topicStage === 3 ? 3 : topicStage + 1)} aria-label={`Update ${topic.title}`}><span>{topicStage === 0 ? "" : topicStage === 3 ? "★" : "✓"}</span></button><div className="topic-main"><div className="topic-kicker"><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><span>{topic.code}</span><span>{topic.unit}</span></div><h3>{topic.title}</h3><div className="topic-meta"><span>{importanceLabel(topic.importance)}</span><span>{topic.paper}</span><span>{topic.minutes} min</span><span>{item?.bestScore != null ? `Best ${item.bestScore}%` : "No test yet"}</span></div>{open && <div className="topic-detail"><div><strong>Examiner habit</strong><p>{topic.tip}</p></div><div><strong>Past-paper evidence</strong><p>Paper coverage is shown. Exact appearance counts will only be added after paper-by-paper tagging; no frequency has been guessed.</p></div><a href={youtubeSearchUrl(topic)} target="_blank" rel="noreferrer">Find a topic lesson on YouTube ↗</a></div>}</div><div className="topic-actions"><span className={`status-pill ${stageClass(topicStage)}`}>{STAGES[topicStage]}</span>{topicStage > 0 && <button onClick={() => updateStage(topic, 0)} aria-label={`Reset ${topic.title} to Not started`}>Reset</button>}<button onClick={() => setExpanded(open ? null : topic.id)}>{open ? "Close" : "Help"}</button></div></article>;
               })}
               {filteredTopics.length === 0 && <EmptyMessage>No topics match these filters.</EmptyMessage>}
             </div>
