@@ -93,7 +93,17 @@ export async function getFamilySession(): Promise<FamilySession | null> {
   }
 
   const payload = `${familyId}.${expiresAt}`;
-  const expectedSignature = await hmac(payload, await getSigningSecret());
+  let signingSecret: string;
+  try {
+    signingSecret = await getSigningSecret();
+  } catch (error) {
+    console.error(
+      "The family session could not be verified:",
+      error instanceof Error ? error.message : "Session configuration is unavailable.",
+    );
+    return null;
+  }
+  const expectedSignature = await hmac(payload, signingSecret);
   if (!timingSafeEqual(suppliedSignature, expectedSignature)) return null;
 
   return { familyId, displayName: "Talha Family" };

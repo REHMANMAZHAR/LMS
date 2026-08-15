@@ -105,6 +105,13 @@ function relativeAge(value: string | null) {
   return Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000);
 }
 
+function greetingForLocalTime() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
 function isRevisionDue(item: ProgressItem | undefined) {
   if (!item || item.stage === 0) return false;
   const wait = item.stage === 1 ? 3 : item.stage === 2 ? 7 : 21;
@@ -137,6 +144,7 @@ export default function StudyDashboard({
   const [saving, setSaving] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [message, setMessage] = useState("");
+  const [greeting, setGreeting] = useState("Welcome");
   const [subject, setSubject] = useState<SubjectName | "All">("All");
   const [stageFilter, setStageFilter] = useState("All stages");
   const [search, setSearch] = useState("");
@@ -172,7 +180,7 @@ export default function StudyDashboard({
   }, []);
 
   useEffect(() => {
-    void loadFamilyState(true);
+    const initialLoad = window.setTimeout(() => void loadFamilyState(true), 0);
     const refresh = () => void loadFamilyState(false);
     const interval = window.setInterval(refresh, 30_000);
     const onVisibility = () => {
@@ -181,11 +189,22 @@ export default function StudyDashboard({
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      window.clearTimeout(initialLoad);
       window.clearInterval(interval);
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [loadFamilyState]);
+
+  useEffect(() => {
+    const updateGreeting = () => setGreeting(greetingForLocalTime());
+    const initialUpdate = window.setTimeout(updateGreeting, 0);
+    const interval = window.setInterval(updateGreeting, 60_000);
+    return () => {
+      window.clearTimeout(initialUpdate);
+      window.clearInterval(interval);
+    };
+  }, []);
 
   const progressMap = useMemo(
     () => new Map(familyState.progress.map((item) => [item.topicId, item])),
@@ -384,7 +403,7 @@ export default function StudyDashboard({
 
       <main className="main-area">
         <header className="topbar">
-          <div><span className="eyebrow">CAMBRIDGE IGCSE · FOUR SUBJECTS</span><h1>{view === "parent" ? "Parent overview" : view === "syllabus" ? "Syllabus map" : view === "tests" ? "Tests & retention" : view === "plan" ? "Adaptive study plan" : "Good morning, Talha"}</h1></div>
+          <div><span className="eyebrow">CAMBRIDGE IGCSE · FOUR SUBJECTS</span><h1>{view === "parent" ? "Parent overview" : view === "syllabus" ? "Syllabus map" : view === "tests" ? "Tests & retention" : view === "plan" ? "Adaptive study plan" : `${greeting}, Talha`}</h1></div>
           <div className="account-pill"><span>{displayName.slice(0, 1).toUpperCase()}</span><div><strong>{displayName}</strong><small>{lastSynced ? `Synced ${lastSynced.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : view === "parent" ? "Parent mode" : "Secure family access"}</small></div></div>
         </header>
 
