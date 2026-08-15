@@ -52,7 +52,13 @@ export async function getDb() {
   const binding = env.DB as Parameters<typeof drizzle>[0] & {
     exec(query: string): Promise<unknown>;
   };
-  schemaReady ??= binding.exec(INITIAL_SCHEMA);
+  const statements = INITIAL_SCHEMA
+  .split(";")
+  .map((statement) => statement.trim())
+  .filter(Boolean)
+  .map((statement) => binding.prepare(statement));
+
+schemaReady ??= binding.batch(statements);
   await schemaReady;
 
   return drizzle(binding, { schema });
