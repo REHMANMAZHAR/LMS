@@ -2,6 +2,7 @@ import type { SubjectName } from "./data";
 
 export const ASSESSMENT_TYPES = [
   "Diagnostic",
+  "Topic quiz",
   "Topical practice",
   "Mixed practice",
   "Full paper",

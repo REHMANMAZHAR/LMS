@@ -78,8 +78,11 @@ export async function PATCH(request: Request) {
       const subject = String(payload.subject ?? "").slice(0, 60);
       const stage = Number(payload.stage);
       const minutes = Math.max(0, Math.min(600, Number(payload.minutes ?? 0)));
-      if (!topicId || !Number.isInteger(stage) || stage < 0 || stage > 3) {
-        return Response.json({ error: "Invalid topic progress." }, { status: 400 });
+      if (!topicId || !Number.isInteger(stage) || stage < 0 || stage > 1) {
+        return Response.json(
+          { error: "Learning may be marked manually; Practising and Secure require assessment evidence." },
+          { status: 400 },
+        );
       }
       const now = new Date().toISOString();
       await db
@@ -173,7 +176,7 @@ export async function PATCH(request: Request) {
         subject as SubjectName,
       );
       const secure = evidence.secure;
-      const awardedStage = percentage >= threshold ? (secure ? 3 : 2) : percentage >= 60 ? 2 : 1;
+      const awardedStage = percentage >= threshold ? (secure ? 3 : 2) : 1;
 
       await db.insert(assessmentAttempts).values({
         familyId: FAMILY_ID,

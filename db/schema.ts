@@ -55,6 +55,34 @@ export const assessmentAttempts = sqliteTable("assessment_attempts", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const quizSessions = sqliteTable("quiz_sessions", {
+  id: text("id").primaryKey(),
+  familyId: text("family_id").notNull().default("talha-family"),
+  topicId: text("topic_id").notNull(),
+  quizVersion: text("quiz_version").notNull(),
+  questionIds: text("question_ids").notNull(),
+  startedAt: text("started_at").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  submittedAt: text("submitted_at"),
+});
+
+export const quizAttempts = sqliteTable("quiz_attempts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  familyId: text("family_id").notNull().default("talha-family"),
+  sessionId: text("session_id").notNull().unique(),
+  topicId: text("topic_id").notNull(),
+  subject: text("subject").notNull(),
+  quizVersion: text("quiz_version").notNull(),
+  timed: integer("timed", { mode: "boolean" }).notNull().default(false),
+  score: integer("score").notNull(),
+  maxScore: integer("max_score").notNull(),
+  durationSeconds: integer("duration_seconds").notNull(),
+  responsesJson: text("responses_json").notNull(),
+  feedbackJson: text("feedback_json").notNull(),
+  errorSummary: text("error_summary"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const loginAttempts = sqliteTable("login_attempts", {
   key: text("key").primaryKey(),
   attempts: integer("attempts").notNull().default(0),

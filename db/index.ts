@@ -49,6 +49,38 @@ CREATE TABLE IF NOT EXISTS assessment_attempts (
 );
 CREATE INDEX IF NOT EXISTS assessment_family_topic_idx
   ON assessment_attempts (family_id, topic_id, created_at);
+CREATE TABLE IF NOT EXISTS quiz_sessions (
+  id TEXT PRIMARY KEY NOT NULL,
+  family_id TEXT NOT NULL DEFAULT 'talha-family',
+  topic_id TEXT NOT NULL,
+  quiz_version TEXT NOT NULL,
+  question_ids TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  submitted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS quiz_session_family_idx
+  ON quiz_sessions (family_id, topic_id, started_at);
+CREATE TABLE IF NOT EXISTS quiz_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  family_id TEXT NOT NULL DEFAULT 'talha-family',
+  session_id TEXT NOT NULL,
+  topic_id TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  quiz_version TEXT NOT NULL,
+  timed INTEGER NOT NULL DEFAULT 0,
+  score INTEGER NOT NULL,
+  max_score INTEGER NOT NULL,
+  duration_seconds INTEGER NOT NULL,
+  responses_json TEXT NOT NULL,
+  feedback_json TEXT NOT NULL,
+  error_summary TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS quiz_attempt_session_idx
+  ON quiz_attempts (session_id);
+CREATE INDEX IF NOT EXISTS quiz_attempt_family_topic_idx
+  ON quiz_attempts (family_id, topic_id, created_at);
 CREATE TABLE IF NOT EXISTS login_attempts (
   key TEXT PRIMARY KEY NOT NULL,
   attempts INTEGER NOT NULL DEFAULT 0,

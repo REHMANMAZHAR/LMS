@@ -22,8 +22,10 @@ import {
   percentage,
   subjectThreshold,
 } from "./learning-model";
+import QuizView from "./quiz-view";
+import { REVIEWED_QUIZ_TOPIC_IDS, hasReviewedQuiz, type QuizResultPayload } from "./quiz-model";
 
-type View = "today" | "syllabus" | "tests" | "plan" | "parent";
+type View = "today" | "syllabus" | "quizzes" | "tests" | "plan" | "parent";
 type ProgressItem = {
   topicId: string;
   stage: number;
@@ -130,9 +132,9 @@ function relativeAge(value: string | null) {
 
 function greetingForLocalTime() {
   const hour = new Date().getHours();
-  if (hour < 12) return "Good Morning";
-  if (hour < 17) return "Good Afternoon";
-  return "Good Evening";
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
 }
 
 function isRevisionDue(item: ProgressItem | undefined) {
@@ -173,6 +175,7 @@ export default function StudyDashboard({
   const [stageFilter, setStageFilter] = useState("All stages");
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [quizTopicId, setQuizTopicId] = useState<string>(REVIEWED_QUIZ_TOPIC_IDS[0]);
   const [testTopicId, setTestTopicId] = useState(
     TOPICS.find((topic) => topic.subject === "Mathematics")?.id ?? TOPICS[0].id,
   );
@@ -385,8 +388,39 @@ export default function StudyDashboard({
     return data;
   }
 
+  function openQuiz(topic: Topic) {
+    setQuizTopicId(topic.id);
+    setView("quizzes");
+    setMessage("");
+  }
+
+  async function handleQuizCompleted(result: QuizResultPayload) {
+    await loadFamilyState(false);
+    if (result.secure) {
+      setMessage(`${result.percentage}% — this topic is now Secure with repeated, timed evidence.`);
+    } else if (result.passed) {
+      setMessage(`${result.percentage}% — quiz passed. The topic is now Practising; re-test on another date for Secure.`);
+    } else {
+      setMessage(`${result.percentage}% — review the corrections, then retry the quiz.`);
+    }
+  }
+
   async function updateStage(topic: Topic, requestedStage: number) {
     const existing = progressMap.get(topic.id);
+    const existingStage = existing?.stage ?? 0;
+    if (requestedStage >= 2 && existingStage < 2) {
+      if (hasReviewedQuiz(topic.id)) {
+        openQuiz(topic);
+        return;
+      }
+      setTestTopicId(topic.id);
+      setTestPaper(SUBJECT_PROFILES[topic.subject].papers[0]);
+      setView("tests");
+      setMessage(
+        `Record marked evidence at ${subjectThreshold(topic.subject)}% or above to move ${topic.title} to Practising.`,
+      );
+      return;
+    }
     if (requestedStage >= 3 && (existing?.stage ?? 0) < 3) {
       setTestTopicId(topic.id);
       setTestPaper(SUBJECT_PROFILES[topic.subject].papers[0]);
@@ -396,11 +430,12 @@ export default function StudyDashboard({
       );
       return;
     }
+    if (requestedStage >= 3 && existingStage >= 3) return;
     const safeStage = requestedStage === 0
       ? 0
-      : (existing?.stage ?? 0) >= 3
-        ? 3
-        : Math.max(1, Math.min(2, requestedStage));
+      : existingStage >= 2
+        ? existingStage
+        : 1;
     setSaving(true);
     setMessage("");
     const now = new Date().toISOString();
@@ -561,8 +596,8 @@ export default function StudyDashboard({
         <nav aria-label="Main navigation">
           {([
             ["today", "Today", "01"], ["syllabus", "Syllabus", "02"],
-            ["tests", "Tests", "03"], ["plan", "Study plan", "04"],
-            ["parent", "Parent view", "05"],
+            ["quizzes", "Quizzes", "03"], ["tests", "Tests", "04"],
+            ["plan", "Study plan", "05"], ["parent", "Parent view", "06"],
           ] as Array<[View, string, string]>).map(([key, label, number]) => (
             <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key)}><span>{number}</span>{label}</button>
           ))}
@@ -573,7 +608,7 @@ export default function StudyDashboard({
 
       <main className="main-area">
         <header className="topbar">
-          <div><span className="eyebrow">CAMBRIDGE IGCSE · FOUR SUBJECTS</span><h1>{view === "parent" ? "Parent overview" : view === "syllabus" ? "Syllabus map" : view === "tests" ? "Tests & retention" : view === "plan" ? "Adaptive study plan" : `${greeting}, Talha`}</h1></div>
+          <div><span className="eyebrow">CAMBRIDGE IGCSE · FOUR SUBJECTS</span><h1>{view === "parent" ? "Parent overview" : view === "syllabus" ? "Syllabus map" : view === "quizzes" ? "Topic quizzes" : view === "tests" ? "Tests & retention" : view === "plan" ? "Adaptive study plan" : `${greeting}, Talha`}</h1></div>
           <div className="account-pill"><span>{displayName.slice(0, 1).toUpperCase()}</span><div><strong>{displayName}</strong><small>{lastSynced ? `Synced ${lastSynced.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : view === "parent" ? "Parent mode" : "Secure family access"}</small></div></div>
         </header>
 
@@ -591,7 +626,13 @@ export default function StudyDashboard({
                   const topic = mission.topic;
                   const item = progressMap.get(topic.id);
                   const topicStage = item?.stage ?? 0;
-                  return <article className={`focus-card ${subjectClass(topic.subject)}`} key={`${mission.label}-${topic.id}`}><div className="card-top"><span>{mission.label} · {SUBJECT_META[topic.subject].short} {topic.code}</span>{isRevisionDue(item) && <b>RECALL DUE</b>}</div><h3>{topic.title}</h3><p className="mission-reason">{mission.reason}</p><p>{topic.tip}</p><div className="card-bottom"><span>{mission.minutes} min today</span><button disabled={saving} onClick={() => { if (mission.action === "test" || mission.action === "correct" || topicStage >= 2) { setTestTopicId(topic.id); setTestPaper(SUBJECT_PROFILES[topic.subject].papers[0]); setView("tests"); setMessage(`Record evidence after completing ${topic.title}.`); } else { void updateStage(topic, topicStage + 1); } }}>{topicStage === 0 ? "Mark learning" : topicStage === 1 ? "Mark practising" : "Record evidence"}</button></div></article>;
+                  const reviewedQuiz = hasReviewedQuiz(topic.id);
+                  const actionLabel = topicStage === 0
+                    ? "Mark learning"
+                    : topicStage === 1 && reviewedQuiz
+                      ? "Take quiz"
+                      : "Record evidence";
+                  return <article className={`focus-card ${subjectClass(topic.subject)}`} key={`${mission.label}-${topic.id}`}><div className="card-top"><span>{mission.label} · {SUBJECT_META[topic.subject].short} {topic.code}</span>{isRevisionDue(item) && <b>RECALL DUE</b>}</div><h3>{topic.title}</h3><p className="mission-reason">{mission.reason}</p><p>{topic.tip}</p><div className="card-bottom"><span>{mission.minutes} min today</span><button disabled={saving} onClick={() => { if (topicStage === 1 && reviewedQuiz) { openQuiz(topic); } else if (mission.action === "test" || mission.action === "correct" || topicStage >= 1) { setTestTopicId(topic.id); setTestPaper(SUBJECT_PROFILES[topic.subject].papers[0]); setView("tests"); setMessage(`Record evidence after completing ${topic.title}.`); } else { void updateStage(topic, 1); } }}>{actionLabel}</button></div></article>;
                 })}
               </div>
             </section>
@@ -605,11 +646,22 @@ export default function StudyDashboard({
             <div className="topic-list">
               {filteredTopics.map((topic) => {
                 const item = progressMap.get(topic.id); const topicStage = item?.stage ?? 0; const open = expanded === topic.id; const evidence = evidenceForTopic(tests, topic.id, topic.subject);
-                return <article className="topic-row" key={topic.id}><button className={`stage-button ${stageClass(topicStage)}`} onClick={() => updateStage(topic, topicStage === 3 ? 3 : topicStage + 1)} aria-label={`Update ${topic.title}`}><span>{topicStage === 0 ? "" : topicStage === 3 ? "★" : "✓"}</span></button><div className="topic-main"><div className="topic-kicker"><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><span>{topic.code}</span><span>{topic.unit}</span></div><h3>{topic.title}</h3><div className="topic-meta"><span>{importanceLabel(topic.importance)}</span><span>{topic.paper}</span><span>{topic.minutes} min</span><span>{item?.bestScore != null ? `Best ${item.bestScore}%` : "No evidence yet"}</span><span>Secure proof {evidence.passes}/2 · {evidence.hasTimed ? "timed ✓" : "timed needed"}</span></div>{open && <div className="topic-detail"><div><strong>Examiner habit</strong><p>{topic.tip}</p></div><div><strong>Secure evidence rule</strong><p>Reach at least {evidence.target}% twice on different dates. At least one qualifying result must be completed under timed conditions.</p></div><a href={youtubeSearchUrl(topic)} target="_blank" rel="noreferrer">Find a topic lesson on YouTube ↗</a></div>}</div><div className="topic-actions"><span className={`status-pill ${stageClass(topicStage)}`}>{STAGES[topicStage]}</span>{topicStage > 0 && <button onClick={() => updateStage(topic, 0)} aria-label={`Reset ${topic.title} to Not started`}>Reset</button>}<button onClick={() => setExpanded(open ? null : topic.id)}>{open ? "Close" : "Help"}</button></div></article>;
+                return <article className="topic-row" key={topic.id}><button className={`stage-button ${stageClass(topicStage)}`} onClick={() => updateStage(topic, topicStage === 3 ? 3 : topicStage + 1)} aria-label={`Update ${topic.title}`}><span>{topicStage === 0 ? "" : topicStage === 3 ? "★" : "✓"}</span></button><div className="topic-main"><div className="topic-kicker"><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><span>{topic.code}</span><span>{topic.unit}</span></div><h3>{topic.title}</h3><div className="topic-meta"><span>{importanceLabel(topic.importance)}</span><span>{topic.paper}</span><span>{topic.minutes} min</span><span>{item?.bestScore != null ? `Best ${item.bestScore}%` : "No evidence yet"}</span><span>Secure proof {evidence.passes}/2 · {evidence.hasTimed ? "timed ✓" : "timed needed"}</span>{hasReviewedQuiz(topic.id) && <span>Reviewed quiz ready</span>}</div>{open && <div className="topic-detail"><div><strong>Examiner habit</strong><p>{topic.tip}</p></div><div><strong>Secure evidence rule</strong><p>Reach at least {evidence.target}% twice on different dates. At least one qualifying result must be completed under timed conditions.</p></div><a href={youtubeSearchUrl(topic)} target="_blank" rel="noreferrer">Find a topic lesson on YouTube ↗</a></div>}</div><div className="topic-actions"><span className={`status-pill ${stageClass(topicStage)}`}>{STAGES[topicStage]}</span>{hasReviewedQuiz(topic.id) && topicStage > 0 && <button className="quiz-row-button" onClick={() => openQuiz(topic)}>Quiz</button>}{topicStage > 0 && <button onClick={() => updateStage(topic, 0)} aria-label={`Reset ${topic.title} to Not started`}>Reset</button>}<button onClick={() => setExpanded(open ? null : topic.id)}>{open ? "Close" : "Help"}</button></div></article>;
               })}
               {filteredTopics.length === 0 && <EmptyMessage>No topics match these filters.</EmptyMessage>}
             </div>
           </section>
+        )}
+
+        {view === "quizzes" && (
+          <QuizView
+            selectedTopicId={quizTopicId}
+            progressMap={progressMap}
+            attempts={familyState.attempts}
+            onSelectTopic={setQuizTopicId}
+            onOpenSyllabus={() => setView("syllabus")}
+            onCompleted={handleQuizCompleted}
+          />
         )}
 
         {view === "tests" && (
