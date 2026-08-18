@@ -12,6 +12,7 @@ function assert(condition, message) {
 const miniflare = new Miniflare({
   scriptPath: "dist/server/index.js",
   modules: true,
+  modulesRules: [{ type: "ESModule", include: ["**/*.js"] }],
   modulesRoot: "dist/server",
   compatibilityDate: "2026-05-22",
   compatibilityFlags: ["nodejs_compat"],
@@ -21,7 +22,6 @@ const miniflare = new Miniflare({
   },
   d1Databases: { DB: "talha-integration-db" },
   d1Persist: false,
-  assets: { directory: "dist/client", binding: "ASSETS" },
   logRequests: false,
 });
 
@@ -43,7 +43,10 @@ function correctResponses(topicId, publicQuestions) {
 
 try {
   const unauthenticated = await request("/api/state");
-  assert(unauthenticated.status === 401, `Expected unauthenticated state to return 401, got ${unauthenticated.status}.`);
+  assert(
+    unauthenticated.status === 401,
+    `Expected unauthenticated state to return 401, got ${unauthenticated.status}: ${await unauthenticated.text()}`,
+  );
 
   const login = await request("/api/auth/login", {
     method: "POST",
@@ -118,7 +121,34 @@ try {
   assert(backup.status === 200 && backupBody.format === "talha-cie-study-backup-v3", "The v3 backup could not be created.");
   assert(backupBody.quizAttempts.length === 2, "Detailed quiz attempts are missing from the backup.");
 
-  console.log("Quiz integration passed: auth, D1 initialization, evidence promotion, duplicate protection, sync, and backup.");
+  const additionalSubjects = [
+    { topicId: "chem-2-4", subject: "Chemistry", threshold: 85 },
+    { topicId: "pak-kq3", subject: "Pakistan Studies", threshold: 80 },
+    { topicId: "isl-p1-2a", subject: "Islamiyat", threshold: 80 },
+  ];
+  for (const item of additionalSubjects) {
+    const learning = await request("/api/state", {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ action: "progress", topicId: item.topicId, subject: item.subject, stage: 1, minutes: 20 }),
+    });
+    assert(learning.status === 200, `Marking ${item.subject} Learning failed with ${learning.status}.`);
+    const start = await request(`/api/quiz?topicId=${item.topicId}`, { headers: { cookie } });
+    assert(start.status === 200, `Starting the ${item.subject} quiz failed with ${start.status}.`);
+    const subjectQuiz = await start.json();
+    assert(subjectQuiz.questions.length === 8, `${item.subject} should deliver eight questions.`);
+    const subjectSubmit = await request("/api/quiz", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ sessionId: subjectQuiz.sessionId, responses: correctResponses(item.topicId, subjectQuiz.questions) }),
+    });
+    const subjectResult = await subjectSubmit.json();
+    assert(subjectSubmit.status === 200, `Submitting the ${item.subject} quiz failed with ${subjectSubmit.status}.`);
+    assert(subjectResult.percentage === 100 && subjectResult.threshold === item.threshold, `${item.subject} used the wrong pass threshold.`);
+    assert(subjectResult.awardedStage === 2, `A first ${item.subject} pass should award Practising.`);
+  }
+
+  console.log("Quiz integration passed: all four subjects, auth, D1 initialization, evidence promotion, duplicate protection, sync, and backup.");
 } finally {
   await miniflare.dispose();
 }

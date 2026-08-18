@@ -1,8 +1,8 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { STAGES, SUBJECT_META, TOPICS } from "./data";
-import type { AssessmentAttempt } from "./learning-model";
+import { STAGES, SUBJECT_META, SUBJECTS, TOPICS } from "./data";
+import { subjectThreshold, type AssessmentAttempt } from "./learning-model";
 import {
   REVIEWED_QUIZ_TOPIC_IDS,
   type QuizResultPayload,
@@ -16,11 +16,17 @@ type QuizViewProps = {
   onSelectTopic: (topicId: string) => void;
   onOpenSyllabus: () => void;
   onCompleted: (result: QuizResultPayload) => void | Promise<void>;
+  onExplore: (topicId: string, question: string) => void;
 };
 
 const reviewedTopics = REVIEWED_QUIZ_TOPIC_IDS.map((topicId) =>
   TOPICS.find((topic) => topic.id === topicId),
 ).filter((topic) => topic != null);
+
+const reviewedTopicsBySubject = SUBJECTS.map((subject) => ({
+  subject,
+  topics: reviewedTopics.filter((topic) => topic.subject === subject),
+})).filter((group) => group.topics.length > 0);
 
 function timeLabel(seconds: number) {
   const safe = Math.max(0, seconds);
@@ -34,9 +40,11 @@ export default function QuizView({
   onSelectTopic,
   onOpenSyllabus,
   onCompleted,
+  onExplore,
 }: QuizViewProps) {
   const selectedTopic = reviewedTopics.find((topic) => topic.id === selectedTopicId) ?? reviewedTopics[0];
   const stage = progressMap.get(selectedTopic.id)?.stage ?? 0;
+  const threshold = subjectThreshold(selectedTopic.subject);
   const [session, setSession] = useState<QuizSessionPayload | null>(null);
   const [responses, setResponses] = useState<Record<string, string>>({});
   const [result, setResult] = useState<QuizResultPayload | null>(null);
@@ -148,12 +156,16 @@ export default function QuizView({
       <aside className="panel quiz-launcher">
         <span className="eyebrow">BUILT-IN TOPIC QUIZZES</span>
         <h2>Prove the learning</h2>
-        <p>Answers are marked automatically. A Mathematics topic moves to Practising only at 85% or above.</p>
+        <p>Answers are marked automatically. Every subject now has reviewed quiz sets, with a subject-specific passing mark.</p>
         <label>
           Reviewed topic
           <select value={selectedTopic.id} onChange={(event) => selectTopic(event.target.value)} disabled={Boolean(session && !result)}>
-            {reviewedTopics.map((topic) => (
-              <option key={topic.id} value={topic.id}>{topic.code} · {topic.title}</option>
+            {reviewedTopicsBySubject.map((group) => (
+              <optgroup key={group.subject} label={`${group.subject} · ${group.topics.length} quizzes`}>
+                {group.topics.map((topic) => (
+                  <option key={topic.id} value={topic.id}>{topic.code} · {topic.title}</option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </label>
@@ -171,10 +183,11 @@ export default function QuizView({
         <div className="quiz-rules">
           <strong>Evidence rules</strong>
           <ul>
-            <li>8 original questions, 1 mark each</li>
-            <li>85% is required for Mathematics</li>
+            <li>8 reviewed questions, 1 mark each</li>
+            <li>{threshold}% is required for {selectedTopic.subject}</li>
             <li>Secure requires two passes on different dates</li>
             <li>At least one qualifying pass must be timed</li>
+            <li>Use Tests for essays and full exam responses</li>
           </ul>
         </div>
         <div className="quiz-recent">
@@ -191,9 +204,9 @@ export default function QuizView({
         {!session && !result && (
           <div className="quiz-welcome">
             <div className="quiz-welcome-mark">Q</div>
-            <span className="eyebrow">FIRST REVIEWED SET</span>
+            <span className="eyebrow">REVIEWED TOPIC SET</span>
             <h2>{selectedTopic.code} · {selectedTopic.title}</h2>
-            <p>Work without notes. You may use a calculator only where the syllabus method allows it. The answer key appears only after submission.</p>
+            <p>Work without notes. These questions check core recall and application; use Tests for longer written exam answers. The answer key appears only after submission.</p>
           </div>
         )}
 
@@ -249,7 +262,7 @@ export default function QuizView({
               {result.feedback.map((item, index) => (
                 <article key={item.questionId} className={item.correct ? "correct" : "incorrect"}>
                   <div className="feedback-mark">{item.correct ? "✓" : "×"}</div>
-                  <div><span>Question {index + 1}</span><h3>{item.prompt}</h3>{!item.correct && <p><b>Correct answer:</b> {item.correctAnswer}</p>}<p>{item.explanation}</p></div>
+                  <div><span>Question {index + 1}</span><h3>{item.prompt}</h3>{!item.correct && <p><b>Correct answer:</b> {item.correctAnswer}</p>}<p>{item.explanation}</p>{!item.correct && <button type="button" className="feedback-tools-button" onClick={() => onExplore(selectedTopic.id, `I got this question wrong: ${item.prompt} Please explain the idea, identify the likely mistake and give me one similar example to try.`)}>Explore this correction</button>}</div>
                 </article>
               ))}
             </div>
