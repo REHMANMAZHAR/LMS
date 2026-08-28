@@ -19,8 +19,8 @@ import {
   AssessmentAttempt,
   AssessmentType,
   ErrorCategory,
+  effortGuidance,
   evidenceForTopic,
-  gradeBand,
   percentage,
   subjectThreshold,
 } from "./learning-model";
@@ -72,6 +72,15 @@ type Mission = {
   reason: string;
   minutes: number;
   action: "learn" | "practise" | "test" | "correct";
+};
+
+type RoadmapSubject = {
+  subject: SubjectName;
+  totalMinutes: number;
+  completedMinutes: number;
+  remainingMinutes: number;
+  progress: number;
+  nextTopic: Topic | undefined;
 };
 
 const DEFAULT_SETTINGS: Record<string, string> = {
@@ -190,6 +199,8 @@ export default function StudyDashboard({
   const [testMinutes, setTestMinutes] = useState("30");
   const [testError, setTestError] = useState<ErrorCategory>("Knowledge gap");
   const [testNote, setTestNote] = useState("");
+  const [, setStuckTopicId] = useState<string | null>(null);
+  const [remindersEnabled, setRemindersEnabled] = useState(false);
 
   const loadFamilyState = useCallback(async (showError = false) => {
     try {
@@ -256,9 +267,13 @@ export default function StudyDashboard({
     const learned = TOPICS.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) >= 1).length;
     const practised = TOPICS.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) >= 2).length;
     const mastered = TOPICS.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) >= 3).length;
-    const coverage = Math.round((learned / total) * 100);
-    const practice = Math.round((practised / total) * 100);
-    const mastery = Math.round((mastered / total) * 100);
+    const totalMinutes = TOPICS.reduce((sum, topic) => sum + topic.minutes, 0);
+    const weighted = (minimumStage: number) => Math.round(
+      (TOPICS.reduce((sum, topic) => sum + ((progressMap.get(topic.id)?.stage ?? 0) >= minimumStage ? topic.minutes : 0), 0) / totalMinutes) * 100,
+    );
+    const coverage = weighted(1);
+    const practice = weighted(2);
+    const mastery = weighted(3);
     const assessmentAverage = familyState.attempts.length
       ? Math.round(
           familyState.attempts.reduce(
@@ -300,6 +315,23 @@ export default function StudyDashboard({
   const requiredDaily = Math.ceil(stats.remainingMinutes / availableDays);
   const plannedDaily = Number(settings.dailyMinutes || 120);
   const feasible = plannedDaily >= requiredDaily;
+
+  const roadmapSubjects = useMemo<RoadmapSubject[]>(() => SUBJECTS.map((roadmapSubject) => {
+    const topics = TOPICS.filter((topic) => topic.subject === roadmapSubject);
+    const totalMinutes = topics.reduce((sum, topic) => sum + topic.minutes, 0);
+    const completedMinutes = topics.reduce((sum, topic) => {
+      const stage = progressMap.get(topic.id)?.stage ?? 0;
+      return sum + topic.minutes * [0, 0.45, 0.75, 1][stage];
+    }, 0);
+    return {
+      subject: roadmapSubject,
+      totalMinutes,
+      completedMinutes: Math.round(completedMinutes),
+      remainingMinutes: Math.max(0, Math.round(totalMinutes - completedMinutes)),
+      progress: Math.round((completedMinutes / totalMinutes) * 100),
+      nextTopic: topics.find((topic) => (progressMap.get(topic.id)?.stage ?? 0) < 3),
+    };
+  }), [progressMap]);
 
   const todayMissions = useMemo<Mission[]>(() => {
     const selected = new Set<string>();
@@ -348,8 +380,8 @@ export default function StudyDashboard({
       .filter((topic): topic is Topic => Boolean(topic));
 
     take(due, "Recall", "Revision is due now", "practise");
-    take(unfinishedMath, "Math priority", "Math receives 40% while moving from C to A* range");
-    take(rotatingTopics, `${SUBJECT_META[rotatingSubject].short} rotation`, "Balanced A* coverage across the other three subjects");
+    take(unfinishedMath, "Foundation priority", "Strengthen the next unfinished Mathematics skill");
+    take(rotatingTopics, `${SUBJECT_META[rotatingSubject].short} rotation`, "Keep all four subjects moving at a sustainable pace");
     take(correctionTopics, "Correct", "Repair a recently recorded source of lost marks", "correct");
 
     const fallback = TOPICS.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) < 3).sort(prioritySort);
@@ -411,14 +443,27 @@ export default function StudyDashboard({
     setMessage("");
   }
 
+  async function enableReminders() {
+    if (!("Notification" in window)) {
+      setMessage("This browser does not support study notifications. The in-LMS reminder will remain available.");
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    const enabled = permission === "granted";
+    setRemindersEnabled(enabled);
+    setMessage(enabled ? "Study reminders are enabled on this device while browser support permits." : "Notifications were not enabled. You can still use the daily plan inside the LMS.");
+    if (enabled) new Notification("Talha's study plan is ready", { body: `${todayMissions.length} focused steps · ${todayMissions.reduce((sum, mission) => sum + mission.minutes, 0)} minutes` });
+  }
+
   async function handleQuizCompleted(result: QuizResultPayload) {
     await loadFamilyState(false);
+    const guidance = effortGuidance(result.percentage, result.feedback.some((item) => !item.correct) ? "Concept or application gap" : "No major error");
     if (result.secure) {
-      setMessage(`${result.percentage}% — this topic is now Secure with repeated, timed evidence.`);
+      setMessage(`${guidance.effort}: ${guidance.next}`);
     } else if (result.passed) {
-      setMessage(`${result.percentage}% — quiz passed. The topic is now Practising; re-test on another date for Secure.`);
+      setMessage(`${guidance.effort}: ${guidance.next}`);
     } else {
-      setMessage(`${result.percentage}% — review the corrections, then retry the quiz.`);
+      setMessage(`${guidance.effort}: ${guidance.next}`);
     }
   }
 
@@ -633,11 +678,11 @@ export default function StudyDashboard({
         {view === "today" && (
           <>
             <section className="hero-panel">
-              <div><span className="eyebrow light">TODAY&apos;S A* DIRECTION</span><h2>Learn it. Prove it.<br />Keep it.</h2><p>{stats.mastered} topics are secure, {TOPICS.filter((topic) => isRevisionDue(progressMap.get(topic.id))).length} recalls are due, and Math receives extra priority while moving from C toward A* standard.</p><button className="hero-action" onClick={() => setView("tests")}>Record diagnostic evidence <span>→</span></button></div>
+              <div><span className="eyebrow light">TODAY&apos;S DIRECTION</span><h2>One clear step.<br />Then the next.</h2><p>{stats.mastered} topics are secure and {TOPICS.filter((topic) => isRevisionDue(progressMap.get(topic.id))).length} recalls are due. Complete today&apos;s focused steps to keep the full roadmap on schedule.</p><div className="hero-buttons"><button className="hero-action" onClick={() => setView("plan")}>See complete roadmap <span>→</span></button><button className="hero-secondary" onClick={() => void enableReminders()}>{remindersEnabled ? "Reminders enabled" : "Enable reminders"}</button></div></div>
               <StatRing value={stats.readiness} label="evidence readiness" />
             </section>
             <section className="section-block">
-              <div className="section-heading"><div><span className="eyebrow">TODAY&apos;S MISSIONS</span><h2>Four focused blocks · {todayMissions.reduce((sum, mission) => sum + mission.minutes, 0)} minutes</h2></div><span className="quiet">Recall · priority · exam work · correction</span></div>
+              <div className="section-heading"><div><span className="eyebrow">TODAY&apos;S FINISH LINE</span><h2>{todayMissions.length} achievable steps · {todayMissions.reduce((sum, mission) => sum + mission.minutes, 0)} minutes</h2></div><span className="quiet">Start small · focus · correct · finish</span></div>
               <div className="today-grid">
                 {todayMissions.map((mission) => {
                   const topic = mission.topic;
@@ -681,8 +726,12 @@ export default function StudyDashboard({
             <div className="filter-panel"><div className="subject-tabs"><button className={subject === "All" ? "active" : ""} onClick={() => setSubject("All")}>All <span>{TOPICS.length}</span></button>{SUBJECTS.map((item) => <button key={item} className={subject === item ? "active" : ""} onClick={() => setSubject(item)}>{SUBJECT_META[item].short} <span>{TOPICS.filter((topic) => topic.subject === item).length}</span></button>)}</div><div className="filter-controls"><label><span className="sr-only">Search syllabus</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search code, unit or topic" /></label><select value={stageFilter} onChange={(event) => setStageFilter(event.target.value)} aria-label="Filter by status"><option>All stages</option>{STAGES.map((item) => <option key={item}>{item}</option>)}<option>Revision due</option></select><strong>{filteredTopics.length} topics</strong></div></div>
             <div className="topic-list">
               {filteredTopics.map((topic) => {
-                const item = progressMap.get(topic.id); const topicStage = item?.stage ?? 0; const open = expanded === topic.id; const evidence = evidenceForTopic(tests, topic.id, topic.subject);
-                return <article className="topic-row" key={topic.id}><button className={`stage-button ${stageClass(topicStage)}`} onClick={() => updateStage(topic, topicStage === 3 ? 3 : topicStage + 1)} aria-label={`Update ${topic.title}`}><span>{topicStage === 0 ? "" : topicStage === 3 ? "★" : "✓"}</span></button><div className="topic-main"><div className="topic-kicker"><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><span>{topic.code}</span><span>{topic.unit}</span></div><h3>{topic.title}</h3><div className="topic-meta"><span>{importanceLabel(topic.importance)}</span><span>{topic.paper}</span><span>{topic.minutes} min</span><span>{item?.bestScore != null ? `Best ${item.bestScore}%` : "No evidence yet"}</span><span>Secure proof {evidence.passes}/2 · {evidence.hasTimed ? "timed ✓" : "timed needed"}</span>{hasReviewedQuiz(topic.id) && <span>Reviewed quiz ready</span>}</div>{open && <div className="topic-detail"><div><strong>Examiner habit</strong><p>{topic.tip}</p></div><div><strong>Secure evidence rule</strong><p>Reach at least {evidence.target}% twice on different dates. At least one qualifying result must be completed under timed conditions.</p></div><div className="topic-links"><strong>Linked learning path</strong>{prerequisiteTopics(topic.id).length ? <p>Builds on: {prerequisiteTopics(topic.id).map((linked) => linked.title).join(" · ")}</p> : <p>No earlier foundation required.</p>}{linkedNextTopics(topic.id).length > 0 && <p>Leads to: {linkedNextTopics(topic.id).map((linked) => linked.title).join(" · ")}</p>}<button onClick={() => setChosenTopicId(topic.id)}>Show full path above</button></div><a href={youtubeSearchUrl(topic)} target="_blank" rel="noreferrer">Find a topic lesson on YouTube ↗</a></div>}</div><div className="topic-actions"><span className={`status-pill ${stageClass(topicStage)}`}>{STAGES[topicStage]}</span>{hasReviewedQuiz(topic.id) && topicStage > 0 && <button className="quiz-row-button" onClick={() => openQuiz(topic)}>Quiz</button>}{topicStage > 0 && <button onClick={() => updateStage(topic, 0)} aria-label={`Reset ${topic.title} to Not started`}>Reset</button>}<button onClick={() => setExpanded(open ? null : topic.id)}>{open ? "Close" : "Help"}</button></div></article>;
+                const item = progressMap.get(topic.id); const topicStage = item?.stage ?? 0; const open = expanded === topic.id;
+                const subjectMinutes = TOPICS.filter((candidate) => candidate.subject === topic.subject).reduce((sum, candidate) => sum + candidate.minutes, 0);
+                const workloadShare = ((topic.minutes / subjectMinutes) * 100).toFixed(1);
+                const sessions = Math.max(1, Math.ceil(topic.minutes / 45));
+                const guidance = effortGuidance(item?.bestScore ?? 0, tests.find((attempt) => attempt.topicId === topic.id)?.errorCategory);
+                return <article className="topic-row" key={topic.id}><button className={`stage-button ${stageClass(topicStage)}`} onClick={() => updateStage(topic, topicStage === 3 ? 3 : topicStage + 1)} aria-label={`Update ${topic.title}`}><span>{topicStage === 0 ? "" : topicStage === 3 ? "★" : "✓"}</span></button><div className="topic-main"><div className="topic-kicker"><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><span>{topic.code}</span><span>{topic.unit}</span></div><h3>{topic.title}</h3><div className="topic-meta"><span>{importanceLabel(topic.importance)} exam priority</span><span>{topic.paper}</span><span>{Math.ceil(topic.minutes / 60 * 10) / 10}h · {sessions} session{sessions === 1 ? "" : "s"}</span><span>{workloadShare}% of subject workload</span><span>{topicStage ? guidance.effort : "Not started"}</span>{hasReviewedQuiz(topic.id) && <span>Reviewed quiz ready</span>}</div>{open && <div className="topic-detail"><div><strong>How to complete it</strong><p>Learn the key idea, work through an example, practise independently, correct errors, then return for a recall check.</p></div><div><strong>What matters in the exam</strong><p>{topic.tip}</p></div><div className="topic-links"><strong>Linked learning path</strong>{prerequisiteTopics(topic.id).length ? <p>Builds on: {prerequisiteTopics(topic.id).map((linked) => linked.title).join(" · ")}</p> : <p>No earlier foundation required.</p>}{linkedNextTopics(topic.id).length > 0 && <p>Leads to: {linkedNextTopics(topic.id).map((linked) => linked.title).join(" · ")}</p>}<button onClick={() => setChosenTopicId(topic.id)}>Show full path above</button></div><div className="stuck-box"><strong>Finding this difficult?</strong><p>Choose the help that matches the problem.</p><div><button onClick={() => setMessage("Open the linked prerequisite first, then return to this topic in a shorter session.")}>I forgot an earlier idea</button><button onClick={() => setMessage("Review one worked example, then try three easier guided questions before continuing.")}>I cannot solve questions</button><button onClick={() => setMessage("Pause now and repeat this topic tomorrow in a smaller 25-minute block.")}>Repeat this later</button></div></div><a href={youtubeSearchUrl(topic)} target="_blank" rel="noreferrer">Watch a selected topic lesson ↗</a></div>}</div><div className="topic-actions"><span className={`status-pill ${stageClass(topicStage)}`}>{STAGES[topicStage]}</span>{hasReviewedQuiz(topic.id) && topicStage > 0 && <button className="quiz-row-button" onClick={() => openQuiz(topic)}>Quiz</button>}{topicStage > 0 && <button onClick={() => updateStage(topic, 0)} aria-label={`Reset ${topic.title} to Not started`}>Reset</button>}<button onClick={() => { setExpanded(open ? null : topic.id); setStuckTopicId(open ? null : topic.id); }}>{open ? "Close" : "Lesson help"}</button></div></article>;
               })}
               {filteredTopics.length === 0 && <EmptyMessage>No topics match these filters.</EmptyMessage>}
             </div>
@@ -709,7 +758,8 @@ export default function StudyDashboard({
                 const average = subjectAttempts.length
                   ? Math.round(subjectAttempts.reduce((sum, attempt) => sum + percentage(attempt.score, attempt.maxScore), 0) / subjectAttempts.length)
                   : null;
-                return <article key={item} className={subjectClass(item)}><div><span>{SUBJECT_META[item].short} · {SUBJECT_META[item].code}</span><strong>{profile.baselineGrade} → {profile.targetGrade}</strong></div><p>{average == null ? "Diagnostic needed" : `${average}% evidence average · ${gradeBand(average)}`}</p><button onClick={() => { const first = TOPICS.find((topic) => topic.subject === item); if (first) { setTestTopicId(first.id); setTestPaper(profile.papers[0]); setTestType("Diagnostic"); } }}>Record {subjectAttempts.length ? "more" : "diagnostic"}</button></article>;
+                const guidance = average == null ? null : effortGuidance(average, subjectAttempts[0]?.errorCategory);
+                return <article key={item} className={subjectClass(item)}><div><span>{SUBJECT_META[item].short} · {SUBJECT_META[item].code}</span><strong>{guidance?.effort ?? "Starting check needed"}</strong></div><p>{guidance ? `Main focus: ${guidance.gap}` : "Record a first attempt to identify the right learning effort."}</p><button onClick={() => { const first = TOPICS.find((topic) => topic.subject === item); if (first) { setTestTopicId(first.id); setTestPaper(profile.papers[0]); setTestType("Diagnostic"); } }}>Record {subjectAttempts.length ? "another attempt" : "starting check"}</button></article>;
               })}
             </div>
             <div className="two-column-section">
@@ -727,7 +777,7 @@ export default function StudyDashboard({
                 <label>Correction note<textarea value={testNote} onChange={(event) => setTestNote(event.target.value)} placeholder="Write the exact correction or rule Talha should remember next time." /></label>
                 <button className="primary-button" disabled={saving}>{saving ? "Saving..." : "Save evidence and schedule next step"}</button>
               </form>
-              <div className="panel results-panel"><div className="section-heading"><div><span className="eyebrow">RECENT EVIDENCE</span><h2>Performance & errors</h2></div><strong>{tests.length} attempts</strong></div><div className="result-list">{tests.length ? tests.slice(0, 14).map((result) => { const topic = TOPICS.find((item) => item.id === result.topicId); const resultPercentage = percentage(result.score, result.maxScore); return <article key={result.id}><div className={`score-disc ${resultPercentage >= subjectThreshold(result.subject) ? "good" : resultPercentage >= 60 ? "mid" : "low"}`}>{resultPercentage}%</div><div><span>{result.subject} · {result.assessmentType} · {dateLabel(result.createdAt)}{result.timed ? " · timed" : ""}</span><h3>{topic?.title ?? "Recorded assessment"}</h3><p>{result.score}/{result.maxScore} marks · {result.minutes ?? 0} min · {result.paper ?? "Component not set"}</p><p className="error-tag">{result.errorCategory ?? "No error category"}{result.note ? ` · ${result.note}` : ""}</p></div></article>; }) : <EmptyMessage>Start with the four diagnostics above. The system will then expose the weakest mark-loss patterns.</EmptyMessage>}</div></div>
+              <div className="panel results-panel"><div className="section-heading"><div><span className="eyebrow">RECENT LEARNING EVIDENCE</span><h2>Effort and next actions</h2></div><strong>{tests.length} attempts</strong></div><div className="result-list">{tests.length ? tests.slice(0, 14).map((result) => { const topic = TOPICS.find((item) => item.id === result.topicId); const resultPercentage = percentage(result.score, result.maxScore); const guidance = effortGuidance(resultPercentage, result.errorCategory); return <article key={result.id}><div className={`effort-disc ${resultPercentage >= subjectThreshold(result.subject) ? "good" : resultPercentage >= 55 ? "mid" : "low"}`}>{guidance.effort.split(" ")[0]}</div><div><span>{result.subject} · {result.assessmentType} · {dateLabel(result.createdAt)}{result.timed ? " · timed" : ""}</span><h3>{topic?.title ?? "Recorded assessment"}</h3><p><strong>{guidance.effort}</strong> · Main need: {guidance.gap}</p><p className="error-tag">{guidance.next}{result.note ? ` ${result.note}` : ""}</p></div></article>; }) : <EmptyMessage>Start with the four subject checks. The system will then recommend the right effort and next action.</EmptyMessage>}</div></div>
             </div>
           </section>
         )}
@@ -736,8 +786,9 @@ export default function StudyDashboard({
           <section className="plan-layout no-top">
             <div className="panel plan-settings"><span className="eyebrow">YOUR CAPACITY</span><h2>Set the finish line</h2><p>Changes recalculate the remaining daily workload instantly.</p><label>First syllabus completion date<input type="date" value={settings.targetDate} onChange={(event) => saveSetting("targetDate", event.target.value)} /></label><label>Final examination date<input type="date" value={settings.examDate} onChange={(event) => saveSetting("examDate", event.target.value)} /></label><div className="form-row"><label>Study days each week<input type="number" min="1" max="7" value={settings.studyDays} onChange={(event) => saveSetting("studyDays", event.target.value)} /></label><label>Minutes available daily<input type="number" min="15" max="600" step="15" value={settings.dailyMinutes} onChange={(event) => saveSetting("dailyMinutes", event.target.value)} /></label></div></div>
             <div className={`capacity-card ${feasible ? "feasible" : "behind"}`}><span className="eyebrow light">PLAN CHECK</span><h2>{feasible ? "The plan is achievable." : "More time is needed."}</h2><p>{Math.ceil(stats.remainingMinutes / 60)} hours of weighted work remain across learning, practice and secure evidence.</p><div className="capacity-numbers"><div><span>Required daily</span><strong>{requiredDaily}<small> min</small></strong></div><div><span>Available daily</span><strong>{plannedDaily}<small> min</small></strong></div><div><span>Study days left</span><strong>{availableDays}</strong></div></div><p className="capacity-advice">{feasible ? `At this pace, Talha has a ${plannedDaily - requiredDaily}-minute daily buffer for timed papers, corrections and missed work.` : `Add ${requiredDaily - plannedDaily} minutes per study day, add study days, or move the completion date.`}</p></div>
-            <div className="panel subject-strategy"><div className="section-heading"><div><span className="eyebrow">PROVISIONAL BASELINE</span><h2>Subject allocation until diagnostics replace estimates</h2></div><span className="quiet">Math C · Chemistry, Pakistan Studies and Islamiyat B</span></div><div className="strategy-grid">{SUBJECTS.map((item) => { const profile = SUBJECT_PROFILES[item]; return <article key={item}><div className="strategy-title"><i style={{ background: SUBJECT_META[item].color }} /><strong>{item}</strong><span>{profile.weeklyShare}% of study time</span></div><p><b>{profile.baselineGrade} → {profile.targetGrade}</b> · secure threshold {profile.secureThreshold}%</p><p>{profile.diagnostic}</p><small>{profile.examHabit}</small></article>; })}</div></div>
-            <div className="panel method-panel"><span className="eyebrow">DAILY A* METHOD</span><h2>One session, five moves</h2><ol><li><span>01</span><div><strong>Recall</strong><p>Retrieve yesterday&apos;s and due material without notes.</p></div></li><li><span>02</span><div><strong>Learn</strong><p>Understand one exact syllabus objective or worked method.</p></div></li><li><span>03</span><div><strong>Practise</strong><p>Answer marked exam questions without looking at solutions.</p></div></li><li><span>04</span><div><strong>Correct</strong><p>Classify every lost mark and write the corrected response.</p></div></li><li><span>05</span><div><strong>Re-test</strong><p>Return on a different date; one qualifying pass must be timed.</p></div></li></ol></div>
+            <div className="panel roadmap-panel"><div className="section-heading"><div><span className="eyebrow">COMPLETE ROADMAP</span><h2>Every subject, hour and next step</h2></div><span className="quiet">Progress is weighted by human study time—not topic count</span></div><div className="roadmap-phases"><article className="active"><span>1</span><div><strong>Learn the syllabus</strong><small>Now → {fullDateLabel(settings.targetDate)}</small></div></article><article><span>2</span><div><strong>Topical exam practice</strong><small>After first coverage</small></div></article><article><span>3</span><div><strong>Mixed timed papers</strong><small>Build speed and application</small></div></article><article><span>4</span><div><strong>Final revision</strong><small>Weak areas and full mocks</small></div></article></div><div className="roadmap-grid">{roadmapSubjects.map((item) => <article key={item.subject} className={subjectClass(item.subject)}><div className="roadmap-title"><i style={{ background: SUBJECT_META[item.subject].color }} /><div><strong>{item.subject}</strong><small>{SUBJECT_META[item.subject].code}</small></div><b>{item.progress}%</b></div><div className="roadmap-bar"><span style={{ width: `${item.progress}%` }} /></div><div className="roadmap-numbers"><span><b>{Math.ceil(item.totalMinutes / 60)}h</b> total</span><span><b>{Math.ceil(item.remainingMinutes / 60)}h</b> remaining</span></div><p>Next: <strong>{item.nextTopic ? `${item.nextTopic.code} · ${item.nextTopic.title}` : "Syllabus learning complete"}</strong></p><button onClick={() => { if (item.nextTopic) { revealTopic(item.nextTopic); setView("syllabus"); } }}>Open next topic</button></article>)}</div></div>
+            <div className="panel subject-strategy"><div className="section-heading"><div><span className="eyebrow">CURRENT STUDY ALLOCATION</span><h2>Time follows present learning needs</h2></div><span className="quiet">Rebalanced as real evidence is recorded</span></div><div className="strategy-grid">{SUBJECTS.map((item) => { const profile = SUBJECT_PROFILES[item]; return <article key={item}><div className="strategy-title"><i style={{ background: SUBJECT_META[item].color }} /><strong>{item}</strong><span>{profile.weeklyShare}% of study time</span></div><p><b>{roadmapSubjects.find((row) => row.subject === item)?.progress ?? 0}% workload completed</b></p><p>{profile.diagnostic}</p><small>{profile.examHabit}</small></article>; })}</div></div>
+            <div className="panel method-panel"><span className="eyebrow">INDEPENDENT STUDY METHOD</span><h2>One lesson, five moves</h2><ol><li><span>01</span><div><strong>Recall</strong><p>Retrieve yesterday&apos;s and due material without notes.</p></div></li><li><span>02</span><div><strong>Learn</strong><p>Understand one exact syllabus objective or worked method.</p></div></li><li><span>03</span><div><strong>Practise</strong><p>Answer marked exam questions without looking at solutions.</p></div></li><li><span>04</span><div><strong>Correct</strong><p>Identify what was missing and write the corrected response.</p></div></li><li><span>05</span><div><strong>Re-test</strong><p>Return on another date to make sure the learning remains.</p></div></li></ol></div>
           </section>
         )}
 
@@ -773,12 +824,12 @@ function ParentView({ progressMap, activity, attempts, stats, settings, required
     const secureRate = Math.round((mastered / topics.length) * 100);
     const profile = SUBJECT_PROFILES[subject];
     const track = !subjectAttempts.length
-      ? "Diagnostic needed"
+      ? "Starting check needed"
       : average >= profile.secureThreshold && secureRate >= 60
-        ? "On A* track"
+        ? "Secure progress"
         : average >= 70
-          ? "Developing"
-          : "Priority rebuild";
+          ? "Steady practice"
+          : "Focused support";
     return { subject, total: topics.length, covered, mastered, average, topError, track, profile };
   });
   const overdue = TOPICS.filter((topic) => isRevisionDue(progressMap.get(topic.id)));
@@ -793,6 +844,6 @@ function ParentView({ progressMap, activity, attempts, stats, settings, required
     <div className="metrics-row"><article><span>Syllabus covered</span><strong>{stats.coverage}%</strong><small>{stats.learned} of {stats.total} topics</small></article><article><span>Evidence Secure</span><strong>{stats.mastery}%</strong><small>{stats.mastered} topics with proof</small></article><article><span>Evidence readiness</span><strong>{stats.readiness}%</strong><small>not a predicted grade</small></article><article><span>Assessment average</span><strong>{stats.assessmentAverage || "—"}{stats.assessmentAverage ? "%" : ""}</strong><small>{stats.timedEvidence} timed attempts</small></article></div>
     <div className="parent-grid"><div className="panel activity-panel"><div className="section-heading"><div><span className="eyebrow">LAST 7 DAYS</span><h2>Study consistency</h2></div><strong>{recent.reduce((sum, day) => sum + day.minutes, 0)} min</strong></div><div className="weekly-bars">{recent.map((day) => <div key={day.key}><div className="bar-track"><span style={{ height: `${Math.max(4, (day.minutes / maxMinutes) * 100)}%` }}><b>{day.minutes || ""}</b></span></div><small>{day.label}</small></div>)}</div><p className="panel-note">Daily target currently requires approximately <strong>{requiredDaily} minutes</strong> on each study day.</p></div>
       <div className="panel alert-panel"><span className="eyebrow">PARENT ATTENTION</span><h2>{overdue.length ? `${overdue.length} recalls are overdue` : "Recall schedule is clear"}</h2>{leadingErrors.length ? <><p>Most frequent sources of lost marks:</p><ul>{leadingErrors.map(([error, count]) => <li key={error}><span>{count}×</span><div><strong>{error}</strong><small>Use the correction note, then re-test on a different date.</small></div></li>)}</ul></> : overdue.length ? <ul>{overdue.slice(0, 4).map((topic) => <li key={topic.id}><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><div><strong>{topic.title}</strong><small>Last studied {dateLabel(progressMap.get(topic.id)?.lastStudiedAt)}</small></div></li>)}</ul> : <p>Run the four subject diagnostics to reveal the first performance priorities.</p>}</div></div>
-    <div className="panel subject-table"><div className="section-heading"><div><span className="eyebrow">A* TRACKER</span><h2>Baseline, proof and next focus</h2></div><div className="backup-actions"><span className="quiet">Syllabus target: {fullDateLabel(settings.targetDate)}</span><a href="/api/backup">Download progress backup</a></div></div><div className="table-head"><span>Subject</span><span>Baseline → target</span><span>Secure</span><span>Evidence</span><span>Status / next focus</span></div>{subjectStats.map((item) => <div className="table-row" key={item.subject}><strong><i style={{ background: SUBJECT_META[item.subject].color }} />{item.subject}</strong><span>{item.profile.baselineGrade} → {item.profile.targetGrade}</span><span>{Math.round((item.mastered / item.total) * 100)}% <small>{item.mastered}/{item.total}</small></span><span>{item.average ? `${item.average}%` : "No diagnostic"}</span><span><b className={`track-pill ${item.track === "On A* track" ? "good" : item.track === "Priority rebuild" ? "low" : "mid"}`}>{item.track}</b><small>{item.topError}</small></span></div>)}</div>
+    <div className="panel subject-table"><div className="section-heading"><div><span className="eyebrow">LEARNING SUPPORT TRACKER</span><h2>Progress, effort and next focus</h2></div><div className="backup-actions"><span className="quiet">Syllabus target: {fullDateLabel(settings.targetDate)}</span><a href="/api/backup">Download progress backup</a></div></div><div className="table-head"><span>Subject</span><span>Workload covered</span><span>Secure</span><span>Effort needed</span><span>Present need / next focus</span></div>{subjectStats.map((item) => { const topicMinutes = TOPICS.filter((topic) => topic.subject === item.subject).reduce((sum, topic) => sum + topic.minutes, 0); const coveredMinutes = TOPICS.filter((topic) => topic.subject === item.subject && (progressMap.get(topic.id)?.stage ?? 0) >= 1).reduce((sum, topic) => sum + topic.minutes, 0); const guidance = item.average ? effortGuidance(item.average, item.topError) : null; return <div className="table-row" key={item.subject}><strong><i style={{ background: SUBJECT_META[item.subject].color }} />{item.subject}</strong><span>{Math.round((coveredMinutes / topicMinutes) * 100)}% <small>weighted by time</small></span><span>{Math.round((item.mastered / item.total) * 100)}% <small>{item.mastered}/{item.total}</small></span><span>{guidance?.effort ?? "Starting check"}</span><span><b className={`track-pill ${item.track === "Secure progress" ? "good" : item.track === "Focused support" ? "low" : "mid"}`}>{item.track}</b><small>{item.topError}</small></span></div>; })}</div>
   </section>;
 }

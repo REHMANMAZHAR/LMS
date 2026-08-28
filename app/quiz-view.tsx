@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { STAGES, SUBJECT_META, SUBJECTS, TOPICS } from "./data";
-import { subjectThreshold, type AssessmentAttempt } from "./learning-model";
+import { effortGuidance, subjectThreshold, type AssessmentAttempt } from "./learning-model";
 import {
   REVIEWED_QUIZ_TOPIC_IDS,
   type QuizResultPayload,
@@ -16,7 +16,6 @@ type QuizViewProps = {
   onSelectTopic: (topicId: string) => void;
   onOpenSyllabus: () => void;
   onCompleted: (result: QuizResultPayload) => void | Promise<void>;
-  onExplore: (topicId: string, question: string) => void;
 };
 
 const reviewedTopics = REVIEWED_QUIZ_TOPIC_IDS.map((topicId) =>
@@ -40,7 +39,6 @@ export default function QuizView({
   onSelectTopic,
   onOpenSyllabus,
   onCompleted,
-  onExplore,
 }: QuizViewProps) {
   const selectedTopic = reviewedTopics.find((topic) => topic.id === selectedTopicId) ?? reviewedTopics[0];
   const stage = progressMap.get(selectedTopic.id)?.stage ?? 0;
@@ -194,8 +192,8 @@ export default function QuizView({
           <strong>Recent quiz evidence</strong>
           {recentAttempts.length ? recentAttempts.map((attempt) => {
             const topic = TOPICS.find((item) => item.id === attempt.topicId);
-            const score = Math.round((attempt.score / attempt.maxScore) * 100);
-            return <div key={attempt.id}><span>{score}%</span><p>{topic?.code ?? "Quiz"} · {topic?.title ?? "Topic"}<small>{new Date(attempt.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}{attempt.timed ? " · timed" : " · untimed"}</small></p></div>;
+            const guidance = effortGuidance(Math.round((attempt.score / attempt.maxScore) * 100), attempt.errorCategory);
+            return <div key={attempt.id}><span>{guidance.effort}</span><p>{topic?.code ?? "Quiz"} · {topic?.title ?? "Topic"}<small>{new Date(attempt.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}{attempt.timed ? " · timed" : " · untimed"}</small></p></div>;
           }) : <p className="quiz-empty">No built-in quiz attempts yet.</p>}
         </div>
       </aside>
@@ -251,25 +249,28 @@ export default function QuizView({
           </form>
         )}
 
-        {result && (
+        {result && (() => {
+          const guidance = effortGuidance(result.percentage, result.feedback.some((item) => !item.correct) ? "Concept or application gap" : "No major error");
+          return (
           <div className="quiz-results">
             <header className={result.passed ? "passed" : "review"}>
-              <div className="quiz-score"><strong>{result.percentage}%</strong><span>{result.score}/{result.maxScore}</span></div>
-              <div><span className="eyebrow">AUTOMATICALLY MARKED</span><h2>{result.secure ? "Secure evidence achieved" : result.passed ? "Quiz passed" : "Review and retry"}</h2><p>{result.passed ? `This result meets the ${result.threshold}% threshold.` : `The pass mark is ${result.threshold}%. Correct the errors below before another attempt.`} {result.timed ? "Timed evidence recorded." : "This attempt was recorded as untimed."}</p></div>
+              <div className="quiz-effort"><strong>{guidance.effort}</strong><span>Recommended effort</span></div>
+              <div><span className="eyebrow">YOUR NEXT LEARNING STEP</span><h2>{result.secure ? "Keep this learning strong" : result.passed ? "Strengthen and retain" : "Review, practise and return"}</h2><p>Main need: {guidance.gap}. {guidance.next}</p></div>
             </header>
             <div className="quiz-evidence-summary"><strong>Secure proof {result.evidencePasses}/2</strong><span>{result.hasTimedPass ? "Timed qualifying pass ✓" : "Timed qualifying pass still needed"}</span></div>
             <div className="quiz-feedback-list">
               {result.feedback.map((item, index) => (
                 <article key={item.questionId} className={item.correct ? "correct" : "incorrect"}>
                   <div className="feedback-mark">{item.correct ? "✓" : "×"}</div>
-                  <div><span>Question {index + 1}</span><h3>{item.prompt}</h3>{!item.correct && <p><b>Correct answer:</b> {item.correctAnswer}</p>}<p>{item.explanation}</p>{!item.correct && <button type="button" className="feedback-tools-button" onClick={() => onExplore(selectedTopic.id, `I got this question wrong: ${item.prompt} Please explain the idea, identify the likely mistake and give me one similar example to try.`)}>Explore this correction</button>}</div>
+                  <div><span>Question {index + 1}</span><h3>{item.prompt}</h3>{!item.correct && <p><b>Correct answer:</b> {item.correctAnswer}</p>}<p>{item.explanation}</p>{!item.correct && <button type="button" className="feedback-tools-button" onClick={onOpenSyllabus}>Review this topic lesson</button>}</div>
                 </article>
               ))}
             </div>
             {error && <div className="quiz-error" role="alert">{error}</div>}
             <button className="primary-button" onClick={() => void startQuiz()} disabled={busy}>{busy ? "Preparing quiz…" : "Try this topic again"}</button>
           </div>
-        )}
+          );
+        })()}
       </div>
     </section>
   );

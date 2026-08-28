@@ -48,8 +48,6 @@ type EvidenceAttempt = Pick<
 >;
 
 export type SubjectProfile = {
-  baselineGrade: string;
-  targetGrade: string;
   secureThreshold: number;
   weeklyShare: number;
   papers: readonly string[];
@@ -59,8 +57,6 @@ export type SubjectProfile = {
 
 export const SUBJECT_PROFILES: Record<SubjectName, SubjectProfile> = {
   Mathematics: {
-    baselineGrade: "C",
-    targetGrade: "A*",
     secureThreshold: 85,
     weeklyShare: 40,
     papers: ["Paper 2 · Non-calculator", "Paper 4 · Calculator"],
@@ -68,8 +64,6 @@ export const SUBJECT_PROFILES: Record<SubjectName, SubjectProfile> = {
     examHabit: "Show every step, keep exact values until the final answer, and check signs, units and reasonableness.",
   },
   Chemistry: {
-    baselineGrade: "B",
-    targetGrade: "A*",
     secureThreshold: 85,
     weeklyShare: 20,
     papers: ["Paper 2 · Multiple choice", "Paper 4 · Theory", "Paper 6 · Alternative to practical"],
@@ -77,8 +71,6 @@ export const SUBJECT_PROFILES: Record<SubjectName, SubjectProfile> = {
     examHabit: "Use exact chemical language; for practical answers give method, observation and conclusion separately.",
   },
   "Pakistan Studies": {
-    baselineGrade: "B",
-    targetGrade: "A*",
     secureThreshold: 80,
     weeklyShare: 20,
     papers: ["Paper 1 · History and culture", "Paper 2 · Environment of Pakistan"],
@@ -86,8 +78,6 @@ export const SUBJECT_PROFILES: Record<SubjectName, SubjectProfile> = {
     examHabit: "Match paragraph depth to the mark value, use precise evidence and finish with a supported judgement.",
   },
   Islamiyat: {
-    baselineGrade: "B",
-    targetGrade: "A*",
     secureThreshold: 80,
     weeklyShare: 20,
     papers: ["Paper 1", "Paper 2"],
@@ -123,10 +113,27 @@ export function evidenceForTopic(
   };
 }
 
-export function gradeBand(value: number) {
-  if (value >= 90) return "A* standard";
-  if (value >= 80) return "A range";
-  if (value >= 70) return "B range";
-  if (value >= 60) return "C range";
-  return "Foundation rebuilding";
+export type EffortLevel = "Light review" | "Steady practice" | "Focused work" | "Intensive support" | "Secure for now";
+
+export function effortGuidance(value: number, errorCategory?: string | null) {
+  const effort: EffortLevel = value >= 85
+    ? "Secure for now"
+    : value >= 70
+      ? "Light review"
+      : value >= 55
+        ? "Steady practice"
+        : value >= 35
+          ? "Focused work"
+          : "Intensive support";
+  const gap = !errorCategory || errorCategory === "No major error" ? "retention and consistency" : errorCategory.toLowerCase();
+  const next = effort === "Secure for now"
+    ? "Schedule a later recall check so the learning is retained."
+    : effort === "Light review"
+      ? "Correct the missed steps, then complete five short questions."
+      : effort === "Steady practice"
+        ? "Review one worked example and complete a guided practice set."
+        : effort === "Focused work"
+          ? "Repeat the explanation, practise with support, and try again tomorrow."
+          : "Pause this topic, rebuild its prerequisites, and return in smaller sessions.";
+  return { effort, gap, next };
 }
