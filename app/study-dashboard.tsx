@@ -8,6 +8,8 @@ import {
   TOPICS,
   SubjectName,
   Topic,
+  linkedNextTopics,
+  prerequisiteTopics,
   youtubeSearchUrl,
 } from "./data";
 import {
@@ -175,6 +177,7 @@ export default function StudyDashboard({
   const [stageFilter, setStageFilter] = useState("All stages");
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [chosenTopicId, setChosenTopicId] = useState<string>(TOPICS[0].id);
   const [quizTopicId, setQuizTopicId] = useState<string>(REVIEWED_QUIZ_TOPIC_IDS[0]);
   const [testTopicId, setTestTopicId] = useState(
     TOPICS.find((topic) => topic.subject === "Mathematics")?.id ?? TOPICS[0].id,
@@ -369,6 +372,20 @@ export default function StudyDashboard({
       return matchesSubject && matchesStage && matchesQuery;
     });
   }, [progressMap, search, stageFilter, subject]);
+
+  const chosenTopic = TOPICS.find((topic) => topic.id === chosenTopicId) ?? TOPICS[0];
+  const chosenPrerequisites = prerequisiteTopics(chosenTopic.id);
+  const missingPrerequisites = chosenPrerequisites.filter(
+    (topic) => (progressMap.get(topic.id)?.stage ?? 0) === 0,
+  );
+  const chosenLinkedNext = linkedNextTopics(chosenTopic.id);
+
+  function revealTopic(topic: Topic) {
+    setSubject(topic.subject);
+    setSearch(topic.code);
+    setStageFilter("All stages");
+    setExpanded(topic.id);
+  }
 
   const tests = familyState.attempts;
   const selectedTestTopic = TOPICS.find((item) => item.id === testTopicId) ?? TOPICS[0];
@@ -641,12 +658,31 @@ export default function StudyDashboard({
 
         {view === "syllabus" && (
           <section className="section-block no-top">
+
+            <div className="topic-chooser panel">
+              <div className="topic-chooser-head">
+                <div><span className="eyebrow">CHOOSE WHAT TO STUDY</span><h2>Check the learning path first</h2><p>Select any topic. The system shows the foundations Talha has already studied, anything still missing, and the topics that build on it.</p></div>
+                <label><span>Topic</span><select value={chosenTopicId} onChange={(event) => setChosenTopicId(event.target.value)}>{SUBJECTS.map((item) => <optgroup key={item} label={item}>{TOPICS.filter((topic) => topic.subject === item).map((topic) => <option key={topic.id} value={topic.id}>{topic.code} · {topic.title}</option>)}</optgroup>)}</select></label>
+              </div>
+              <div className="path-status-row">
+                <div className={missingPrerequisites.length ? "path-readiness needs-foundation" : "path-readiness ready"}>
+                  <strong>{missingPrerequisites.length ? "Foundation recommended first" : "Ready to study"}</strong>
+                  <span>{missingPrerequisites.length ? `${missingPrerequisites.length} linked topic${missingPrerequisites.length === 1 ? "" : "s"} not learned yet` : chosenPrerequisites.length ? "All direct prerequisites have been started" : "No prerequisite is required"}</span>
+                </div>
+                <button className="path-primary" onClick={() => { revealTopic(chosenTopic); if ((progressMap.get(chosenTopic.id)?.stage ?? 0) === 0) void updateStage(chosenTopic, 1); }}>Study this topic</button>
+                {missingPrerequisites[0] && <button className="path-secondary" onClick={() => { setChosenTopicId(missingPrerequisites[0].id); revealTopic(missingPrerequisites[0]); }}>Learn prerequisites first</button>}
+              </div>
+              <div className="path-columns">
+                <div><strong>Earlier knowledge needed</strong>{chosenPrerequisites.length ? <div className="path-chips">{chosenPrerequisites.map((topic) => { const stage = progressMap.get(topic.id)?.stage ?? 0; return <button key={topic.id} className={stage > 0 ? "complete" : "missing"} onClick={() => { setChosenTopicId(topic.id); revealTopic(topic); }}><span>{stage > 0 ? "✓" : "!"}</span>{topic.code} · {topic.title}<small>{STAGES[stage]}</small></button>; })}</div> : <p>No earlier topic is required. Talha can begin here.</p>}</div>
+                <div><strong>Topics that use this knowledge</strong>{chosenLinkedNext.length ? <div className="path-chips">{chosenLinkedNext.map((topic) => <button key={topic.id} onClick={() => { setChosenTopicId(topic.id); revealTopic(topic); }}><span>→</span>{topic.code} · {topic.title}<small>{STAGES[progressMap.get(topic.id)?.stage ?? 0]}</small></button>)}</div> : <p>This is currently an end-point topic in its learning path.</p>}</div>
+              </div>
+            </div>
             <div className="metrics-row compact"><article><span>Coverage</span><strong>{stats.coverage}%</strong><small>{stats.learned}/{stats.total} topics</small></article><article><span>Practising</span><strong>{stats.practice}%</strong><small>{stats.practised} topics</small></article><article><span>Secure</span><strong>{stats.mastery}%</strong><small>{stats.mastered} topics</small></article><article><span>Remaining</span><strong>{Math.ceil(stats.remainingMinutes / 60)}h</strong><small>weighted work to Secure</small></article></div>
             <div className="filter-panel"><div className="subject-tabs"><button className={subject === "All" ? "active" : ""} onClick={() => setSubject("All")}>All <span>{TOPICS.length}</span></button>{SUBJECTS.map((item) => <button key={item} className={subject === item ? "active" : ""} onClick={() => setSubject(item)}>{SUBJECT_META[item].short} <span>{TOPICS.filter((topic) => topic.subject === item).length}</span></button>)}</div><div className="filter-controls"><label><span className="sr-only">Search syllabus</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search code, unit or topic" /></label><select value={stageFilter} onChange={(event) => setStageFilter(event.target.value)} aria-label="Filter by status"><option>All stages</option>{STAGES.map((item) => <option key={item}>{item}</option>)}<option>Revision due</option></select><strong>{filteredTopics.length} topics</strong></div></div>
             <div className="topic-list">
               {filteredTopics.map((topic) => {
                 const item = progressMap.get(topic.id); const topicStage = item?.stage ?? 0; const open = expanded === topic.id; const evidence = evidenceForTopic(tests, topic.id, topic.subject);
-                return <article className="topic-row" key={topic.id}><button className={`stage-button ${stageClass(topicStage)}`} onClick={() => updateStage(topic, topicStage === 3 ? 3 : topicStage + 1)} aria-label={`Update ${topic.title}`}><span>{topicStage === 0 ? "" : topicStage === 3 ? "★" : "✓"}</span></button><div className="topic-main"><div className="topic-kicker"><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><span>{topic.code}</span><span>{topic.unit}</span></div><h3>{topic.title}</h3><div className="topic-meta"><span>{importanceLabel(topic.importance)}</span><span>{topic.paper}</span><span>{topic.minutes} min</span><span>{item?.bestScore != null ? `Best ${item.bestScore}%` : "No evidence yet"}</span><span>Secure proof {evidence.passes}/2 · {evidence.hasTimed ? "timed ✓" : "timed needed"}</span>{hasReviewedQuiz(topic.id) && <span>Reviewed quiz ready</span>}</div>{open && <div className="topic-detail"><div><strong>Examiner habit</strong><p>{topic.tip}</p></div><div><strong>Secure evidence rule</strong><p>Reach at least {evidence.target}% twice on different dates. At least one qualifying result must be completed under timed conditions.</p></div><a href={youtubeSearchUrl(topic)} target="_blank" rel="noreferrer">Find a topic lesson on YouTube ↗</a></div>}</div><div className="topic-actions"><span className={`status-pill ${stageClass(topicStage)}`}>{STAGES[topicStage]}</span>{hasReviewedQuiz(topic.id) && topicStage > 0 && <button className="quiz-row-button" onClick={() => openQuiz(topic)}>Quiz</button>}{topicStage > 0 && <button onClick={() => updateStage(topic, 0)} aria-label={`Reset ${topic.title} to Not started`}>Reset</button>}<button onClick={() => setExpanded(open ? null : topic.id)}>{open ? "Close" : "Help"}</button></div></article>;
+                return <article className="topic-row" key={topic.id}><button className={`stage-button ${stageClass(topicStage)}`} onClick={() => updateStage(topic, topicStage === 3 ? 3 : topicStage + 1)} aria-label={`Update ${topic.title}`}><span>{topicStage === 0 ? "" : topicStage === 3 ? "★" : "✓"}</span></button><div className="topic-main"><div className="topic-kicker"><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><span>{topic.code}</span><span>{topic.unit}</span></div><h3>{topic.title}</h3><div className="topic-meta"><span>{importanceLabel(topic.importance)}</span><span>{topic.paper}</span><span>{topic.minutes} min</span><span>{item?.bestScore != null ? `Best ${item.bestScore}%` : "No evidence yet"}</span><span>Secure proof {evidence.passes}/2 · {evidence.hasTimed ? "timed ✓" : "timed needed"}</span>{hasReviewedQuiz(topic.id) && <span>Reviewed quiz ready</span>}</div>{open && <div className="topic-detail"><div><strong>Examiner habit</strong><p>{topic.tip}</p></div><div><strong>Secure evidence rule</strong><p>Reach at least {evidence.target}% twice on different dates. At least one qualifying result must be completed under timed conditions.</p></div><div className="topic-links"><strong>Linked learning path</strong>{prerequisiteTopics(topic.id).length ? <p>Builds on: {prerequisiteTopics(topic.id).map((linked) => linked.title).join(" · ")}</p> : <p>No earlier foundation required.</p>}{linkedNextTopics(topic.id).length > 0 && <p>Leads to: {linkedNextTopics(topic.id).map((linked) => linked.title).join(" · ")}</p>}<button onClick={() => setChosenTopicId(topic.id)}>Show full path above</button></div><a href={youtubeSearchUrl(topic)} target="_blank" rel="noreferrer">Find a topic lesson on YouTube ↗</a></div>}</div><div className="topic-actions"><span className={`status-pill ${stageClass(topicStage)}`}>{STAGES[topicStage]}</span>{hasReviewedQuiz(topic.id) && topicStage > 0 && <button className="quiz-row-button" onClick={() => openQuiz(topic)}>Quiz</button>}{topicStage > 0 && <button onClick={() => updateStage(topic, 0)} aria-label={`Reset ${topic.title} to Not started`}>Reset</button>}<button onClick={() => setExpanded(open ? null : topic.id)}>{open ? "Close" : "Help"}</button></div></article>;
               })}
               {filteredTopics.length === 0 && <EmptyMessage>No topics match these filters.</EmptyMessage>}
             </div>
