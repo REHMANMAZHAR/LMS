@@ -17,6 +17,9 @@ const SETTING_KEYS = new Set([
   "dailyMinutes",
   "studyDays",
   "studentMode",
+  "plannerStartDate",
+  "reminderTime",
+  "remindersEnabled",
 ]);
 const VALID_SUBJECTS = new Set<string>(SUBJECTS);
 const VALID_ASSESSMENT_TYPES = new Set<string>(ASSESSMENT_TYPES);
@@ -115,10 +118,40 @@ export async function PATCH(request: Request) {
       return Response.json({ ok: true, updatedAt: now });
     }
 
+    if (actionName === "planner") {
+      const taskId = String(payload.taskId ?? "").slice(0, 160);
+      const topicId = String(payload.topicId ?? "").slice(0, 100);
+      const subject = String(payload.subject ?? "").slice(0, 60);
+      const checked = payload.checked === true;
+      const completedDate = String(payload.completedDate ?? "").slice(0, 10);
+      const minutes = Math.max(0, Math.min(180, Number(payload.minutes ?? 0)));
+      if (!taskId || !TOPICS.some((topic) => topic.id === topicId && topic.subject === subject)) {
+        return Response.json({ error: "Invalid planner task." }, { status: 400 });
+      }
+      const now = new Date().toISOString();
+      await db
+        .insert(settings)
+        .values({ familyId: FAMILY_ID, key: `planner.done.${taskId}`, value: checked ? completedDate : "", updatedAt: now })
+        .onConflictDoUpdate({
+          target: [settings.familyId, settings.key],
+          set: { value: checked ? completedDate : "", updatedAt: now },
+        });
+      await db.insert(activity).values({
+        familyId: FAMILY_ID,
+        topicId,
+        subject,
+        kind: checked ? "planner_task" : "planner_uncheck",
+        minutes: checked ? minutes : -minutes,
+        note: checked ? `Daily planner task completed by ${user.displayName}` : `Daily planner task reopened by ${user.displayName}`,
+        createdAt: now,
+      });
+      return Response.json({ ok: true, updatedAt: now });
+    }
+
     if (actionName === "setting") {
       const key = String(payload.key ?? "");
       const value = String(payload.value ?? "").slice(0, 120);
-      if (!SETTING_KEYS.has(key)) {
+      if (!SETTING_KEYS.has(key) && !key.startsWith("planner.")) {
         return Response.json({ error: "Invalid setting." }, { status: 400 });
       }
       const now = new Date().toISOString();

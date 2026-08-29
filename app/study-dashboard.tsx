@@ -27,7 +27,7 @@ import {
 import QuizView from "./quiz-view";
 import { REVIEWED_QUIZ_TOPIC_IDS, hasReviewedQuiz, type QuizResultPayload } from "./quiz-model";
 
-type View = "today" | "syllabus" | "quizzes" | "tests" | "plan" | "parent";
+type View = "today" | "calendar" | "syllabus" | "quizzes" | "tests" | "plan" | "parent";
 type ProgressItem = {
   topicId: string;
   stage: number;
@@ -66,14 +66,6 @@ type Stats = {
   readiness: number;
   remainingMinutes: number;
 };
-type Mission = {
-  topic: Topic;
-  label: string;
-  reason: string;
-  minutes: number;
-  action: "learn" | "practise" | "test" | "correct";
-};
-
 type RoadmapSubject = {
   subject: SubjectName;
   totalMinutes: number;
@@ -83,11 +75,25 @@ type RoadmapSubject = {
   nextTopic: Topic | undefined;
 };
 
+type PlannerTask = {
+  id: string;
+  topic: Topic;
+  session: number;
+  sessions: number;
+  minutes: number;
+  originalDate: string;
+  scheduledDate: string;
+  carriedForward: boolean;
+};
+
 const DEFAULT_SETTINGS: Record<string, string> = {
   targetDate: "2027-02-15",
   examDate: "2027-05-01",
   dailyMinutes: "120",
   studyDays: "6",
+  plannerStartDate: "2026-08-29",
+  reminderTime: "09:00",
+  remindersEnabled: "false",
 };
 
 const EMPTY_STATE: FamilyState = {
@@ -116,6 +122,30 @@ function fullDateLabel(value: string) {
 
 function daysBetween(from: Date, to: Date) {
   return Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 86_400_000));
+}
+
+function localDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function dateFromKey(key: string) {
+  return new Date(`${key}T12:00:00`);
+}
+
+function moveDate(key: string, days: number) {
+  const date = dateFromKey(key);
+  date.setDate(date.getDate() + days);
+  return localDateKey(date);
+}
+
+function isStudyDate(key: string, studyDays: number) {
+  const weekday = dateFromKey(key).getDay();
+  if (studyDays >= 7) return true;
+  if (weekday === 0) return false;
+  return weekday <= Math.max(1, Math.min(6, studyDays));
 }
 
 function studyDaysUntil(target: string, perWeek: number) {
@@ -154,6 +184,91 @@ function isRevisionDue(item: ProgressItem | undefined) {
   return relativeAge(item.lastStudiedAt) >= wait;
 }
 
+function buildPlanner(
+  progressMap: ReadonlyMap<string, ProgressItem>,
+  settings: Record<string, string>,
+  today: string,
+) {
+  const dailyCapacity = Math.max(30, Number(settings.dailyMinutes || 120));
+  const studyDays = Math.max(1, Number(settings.studyDays || 6));
+  const startDate = settings.plannerStartDate || today;
+  const subjectQueues = SUBJECTS.map((plannerSubject) => {
+    const queue: Omit<PlannerTask, "originalDate" | "scheduledDate" | "carriedForward">[] = [];
+    TOPICS.filter((topic) => topic.subject === plannerSubject).forEach((topic) => {
+      const sessions = Math.max(1, Math.ceil(topic.minutes / 45));
+      for (let session = 1; session <= sessions; session += 1) {
+        queue.push({
+          id: `${topic.id}:${session}`,
+          topic,
+          session,
+          sessions,
+          minutes: session === sessions ? Math.max(15, topic.minutes - 45 * (sessions - 1)) : 45,
+        });
+      }
+    });
+    return queue;
+  });
+  const ordered: Array<Omit<PlannerTask, "originalDate" | "scheduledDate" | "carriedForward">> = [];
+  while (subjectQueues.some((queue) => queue.length)) {
+    subjectQueues.forEach((queue) => {
+      const next = queue.shift();
+      if (next) ordered.push(next);
+    });
+  }
+  const canonical = new Map<string, PlannerTask[]>();
+  let date = startDate;
+  let used = 0;
+  ordered.forEach((task) => {
+    while (!isStudyDate(date, studyDays) || (used > 0 && used + task.minutes > dailyCapacity)) {
+      date = moveDate(date, 1);
+      used = 0;
+    }
+    const planned = { ...task, originalDate: date, scheduledDate: date, carriedForward: false };
+    canonical.set(date, [...(canonical.get(date) ?? []), planned]);
+    used += task.minutes;
+  });
+  const logicalCompletion = (task: PlannerTask) => {
+    const stage = progressMap.get(task.topic.id)?.stage ?? 0;
+    const completedShare = [0, .45, .75, 1][stage] ?? 0;
+    return task.session <= Math.floor(task.sessions * completedShare);
+  };
+  const doneDate = (taskId: string) => settings[`planner.done.${taskId}`] || "";
+  const incomplete = [...canonical.values()].flat().filter((task) => !doneDate(task.id) && !logicalCompletion(task));
+  incomplete.sort((a, b) => a.originalDate.localeCompare(b.originalDate));
+  const effective = new Map<string, PlannerTask[]>();
+  let effectiveDate = today;
+  let effectiveUsed = 0;
+  const repeatedTopics = new Set<string>();
+  incomplete.forEach((task) => {
+    const repeatDate = settings[`planner.repeat.${task.topic.id}`];
+    if (repeatDate && repeatDate >= today && !repeatedTopics.has(task.topic.id)) {
+      repeatedTopics.add(task.topic.id);
+      const repeated = { ...task, scheduledDate: repeatDate, carriedForward: repeatDate !== task.originalDate };
+      effective.set(repeatDate, [...(effective.get(repeatDate) ?? []), repeated]);
+      return;
+    }
+    while (!isStudyDate(effectiveDate, studyDays) || (effectiveUsed > 0 && effectiveUsed + task.minutes > dailyCapacity)) {
+      effectiveDate = moveDate(effectiveDate, 1);
+      effectiveUsed = 0;
+    }
+    const moved = { ...task, scheduledDate: effectiveDate, carriedForward: task.originalDate < effectiveDate };
+    effective.set(effectiveDate, [...(effective.get(effectiveDate) ?? []), moved]);
+    effectiveUsed += task.minutes;
+  });
+  [...canonical.values()].flat().forEach((task) => {
+    const completedOn = doneDate(task.id);
+    if (completedOn) effective.set(completedOn, [...(effective.get(completedOn) ?? []), { ...task, scheduledDate: completedOn, carriedForward: false }]);
+  });
+  const tasksById = new Map([...canonical.values()].flat().map((task) => [task.id, task]));
+  return {
+    canonical,
+    effective,
+    tasksById,
+    predictedCompletion: [...effective.keys()].sort().at(-1) ?? today,
+    overdueCount: incomplete.filter((task) => task.originalDate < today).length,
+  };
+}
+
 function StatRing({ value, label }: { value: number; label: string }) {
   return (
     <div
@@ -181,7 +296,6 @@ export default function StudyDashboard({
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [message, setMessage] = useState("");
   const [greeting, setGreeting] = useState("Welcome");
-  const [rotationIndex, setRotationIndex] = useState(0);
   const [subject, setSubject] = useState<SubjectName | "All">("All");
   const [stageFilter, setStageFilter] = useState("All stages");
   const [search, setSearch] = useState("");
@@ -200,7 +314,8 @@ export default function StudyDashboard({
   const [testError, setTestError] = useState<ErrorCategory>("Knowledge gap");
   const [testNote, setTestNote] = useState("");
   const [, setStuckTopicId] = useState<string | null>(null);
-  const [remindersEnabled, setRemindersEnabled] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(localDateKey());
+  const [calendarMonth, setCalendarMonth] = useState(() => localDateKey().slice(0, 7));
 
   const loadFamilyState = useCallback(async (showError = false) => {
     try {
@@ -247,7 +362,6 @@ export default function StudyDashboard({
   useEffect(() => {
     const updateGreeting = () => {
       setGreeting(greetingForLocalTime());
-      setRotationIndex(new Date().getDate() % 3);
     };
     const initialUpdate = window.setTimeout(updateGreeting, 0);
     const interval = window.setInterval(updateGreeting, 60_000);
@@ -309,12 +423,45 @@ export default function StudyDashboard({
     };
   }, [familyState.attempts, progressMap]);
 
-  const settings = { ...DEFAULT_SETTINGS, ...familyState.settings };
+  const settings = useMemo(() => ({ ...DEFAULT_SETTINGS, ...familyState.settings }), [familyState.settings]);
+  const remindersEnabled = settings.remindersEnabled === "true" && typeof Notification !== "undefined" && Notification.permission === "granted";
   const studyDays = Number(settings.studyDays || 6);
   const availableDays = studyDaysUntil(settings.targetDate, studyDays);
   const requiredDaily = Math.ceil(stats.remainingMinutes / availableDays);
   const plannedDaily = Number(settings.dailyMinutes || 120);
   const feasible = plannedDaily >= requiredDaily;
+  const todayKey = localDateKey();
+  const planner = useMemo(
+    () => buildPlanner(progressMap, settings, todayKey),
+    [progressMap, settings, todayKey],
+  );
+  const selectedPlannerTasks = selectedDate < todayKey
+    ? (planner.canonical.get(selectedDate) ?? [])
+    : (planner.effective.get(selectedDate) ?? []);
+  const calendarDays = useMemo(() => {
+    const [year, month] = calendarMonth.split("-").map(Number);
+    const first = new Date(year, month - 1, 1);
+    const leading = (first.getDay() + 6) % 7;
+    const count = new Date(year, month, 0).getDate();
+    return [
+      ...Array.from({ length: leading }, () => null),
+      ...Array.from({ length: count }, (_, index) => `${calendarMonth}-${String(index + 1).padStart(2, "0")}`),
+    ];
+  }, [calendarMonth]);
+
+  useEffect(() => {
+    if (settings.remindersEnabled !== "true" || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    const [hour, minute] = (settings.reminderTime || "09:00").split(":").map(Number);
+    const reminder = new Date();
+    reminder.setHours(hour, minute, 0, 0);
+    if (reminder.getTime() <= Date.now()) reminder.setDate(reminder.getDate() + 1);
+    const delay = reminder.getTime() - Date.now();
+    const timer = window.setTimeout(() => {
+      const tasks = planner.effective.get(localDateKey()) ?? [];
+      new Notification("Talha's study plan is ready", { body: `${tasks.length} tasks · ${tasks.reduce((sum, task) => sum + task.minutes, 0)} minutes planned.` });
+    }, Math.min(delay, 2_147_000_000));
+    return () => window.clearTimeout(timer);
+  }, [planner.effective, settings.reminderTime, settings.remindersEnabled]);
 
   const roadmapSubjects = useMemo<RoadmapSubject[]>(() => SUBJECTS.map((roadmapSubject) => {
     const topics = TOPICS.filter((topic) => topic.subject === roadmapSubject);
@@ -332,66 +479,6 @@ export default function StudyDashboard({
       nextTopic: topics.find((topic) => (progressMap.get(topic.id)?.stage ?? 0) < 3),
     };
   }), [progressMap]);
-
-  const todayMissions = useMemo<Mission[]>(() => {
-    const selected = new Set<string>();
-    const missions: Mission[] = [];
-    const budgetParts = [0.17, 0.33, 0.33, 0.17].map((share) =>
-      Math.max(10, Math.round((plannedDaily * share) / 5) * 5),
-    );
-    const take = (
-      candidates: Topic[],
-      label: string,
-      reason: string,
-      action?: Mission["action"],
-    ) => {
-      const topic = candidates.find((candidate) => !selected.has(candidate.id));
-      if (!topic) return;
-      selected.add(topic.id);
-      const stage = progressMap.get(topic.id)?.stage ?? 0;
-      missions.push({
-        topic,
-        label,
-        reason,
-        minutes: budgetParts[missions.length] ?? 20,
-        action: action ?? (stage === 0 ? "learn" : stage === 1 ? "practise" : "test"),
-      });
-    };
-
-    const prioritySort = (a: Topic, b: Topic) => {
-      const stageDifference = (progressMap.get(a.id)?.stage ?? 0) - (progressMap.get(b.id)?.stage ?? 0);
-      return stageDifference || b.importance - a.importance;
-    };
-    const due = TOPICS.filter((topic) => isRevisionDue(progressMap.get(topic.id))).sort(prioritySort);
-    const unfinishedMath = TOPICS.filter(
-      (topic) => topic.subject === "Mathematics" && (progressMap.get(topic.id)?.stage ?? 0) < 3,
-    ).sort(prioritySort);
-    const rotatingSubjects: SubjectName[] = ["Chemistry", "Pakistan Studies", "Islamiyat"];
-    const rotatingSubject = rotatingSubjects[rotationIndex % rotatingSubjects.length];
-    const rotatingTopics = TOPICS.filter(
-      (topic) => topic.subject === rotatingSubject && (progressMap.get(topic.id)?.stage ?? 0) < 3,
-    ).sort(prioritySort);
-    const recentErrorTopicIds = familyState.attempts
-      .filter((attempt) => attempt.errorCategory && attempt.errorCategory !== "No major error")
-      .map((attempt) => attempt.topicId)
-      .filter((topicId): topicId is string => Boolean(topicId));
-    const correctionTopics = recentErrorTopicIds
-      .map((topicId) => TOPICS.find((topic) => topic.id === topicId))
-      .filter((topic): topic is Topic => Boolean(topic));
-
-    take(due, "Recall", "Revision is due now", "practise");
-    take(unfinishedMath, "Foundation priority", "Strengthen the next unfinished Mathematics skill");
-    take(rotatingTopics, `${SUBJECT_META[rotatingSubject].short} rotation`, "Keep all four subjects moving at a sustainable pace");
-    take(correctionTopics, "Correct", "Repair a recently recorded source of lost marks", "correct");
-
-    const fallback = TOPICS.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) < 3).sort(prioritySort);
-    while (missions.length < 4) {
-      const before = missions.length;
-      take(fallback, "High-impact work", "Next unfinished priority in the syllabus");
-      if (missions.length === before) break;
-    }
-    return missions;
-  }, [familyState.attempts, plannedDaily, progressMap, rotationIndex]);
 
   const filteredTopics = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -450,9 +537,12 @@ export default function StudyDashboard({
     }
     const permission = await Notification.requestPermission();
     const enabled = permission === "granted";
-    setRemindersEnabled(enabled);
+    await saveSetting("remindersEnabled", enabled ? "true" : "false");
     setMessage(enabled ? "Study reminders are enabled on this device while browser support permits." : "Notifications were not enabled. You can still use the daily plan inside the LMS.");
-    if (enabled) new Notification("Talha's study plan is ready", { body: `${todayMissions.length} focused steps · ${todayMissions.reduce((sum, mission) => sum + mission.minutes, 0)} minutes` });
+    if (enabled) {
+      const tasks = planner.effective.get(localDateKey()) ?? [];
+      new Notification("Talha's study plan is ready", { body: `${tasks.length} tasks · ${tasks.reduce((sum, task) => sum + task.minutes, 0)} minutes planned.` });
+    }
   }
 
   async function handleQuizCompleted(result: QuizResultPayload) {
@@ -553,6 +643,57 @@ export default function StudyDashboard({
     }
   }
 
+  async function togglePlannerTask(task: PlannerTask, checked: boolean) {
+    const key = `planner.done.${task.id}`;
+    const previousValue = familyState.settings[key] ?? "";
+    const completedDate = checked ? localDateKey() : "";
+    setFamilyState((current) => ({ ...current, settings: { ...current.settings, [key]: completedDate } }));
+    setSaving(true);
+    try {
+      await sendUpdate({ action: "planner", taskId: task.id, topicId: task.topic.id, subject: task.topic.subject, checked, completedDate, minutes: task.minutes });
+      setMessage(checked ? "Task completed. The remaining calendar has been recalculated." : "Task reopened. Future dates have been updated.");
+      if (checked) {
+        const topicTasks = [...planner.tasksById.values()].filter((candidate) => candidate.topic.id === task.topic.id);
+        const allDone = topicTasks.every((candidate) => candidate.id === task.id || Boolean(settings[`planner.done.${candidate.id}`]));
+        if (allDone && (progressMap.get(task.topic.id)?.stage ?? 0) === 0) await updateStage(task.topic, 1);
+      }
+    } catch (error) {
+      setFamilyState((current) => ({ ...current, settings: { ...current.settings, [key]: previousValue } }));
+      setMessage(error instanceof Error ? error.message : "The task was not saved.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openPrerequisiteHelp(topic: Topic) {
+    const prerequisite = prerequisiteTopics(topic.id).find((candidate) => (progressMap.get(candidate.id)?.stage ?? 0) === 0)
+      ?? prerequisiteTopics(topic.id)[0];
+    if (!prerequisite) {
+      setMessage("This topic has no earlier prerequisite. Open the selected lesson, then try three easier examples.");
+      return;
+    }
+    revealTopic(prerequisite);
+    setChosenTopicId(prerequisite.id);
+    setExpanded(prerequisite.id);
+    setMessage(`Opening the foundation topic: ${prerequisite.title}.`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function openPracticeHelp(topic: Topic) {
+    window.open(youtubeSearchUrl(topic), "_blank", "noopener,noreferrer");
+    setMessage(`Opening a lesson for ${topic.title}. Return afterwards for easier guided practice.`);
+  }
+
+  async function repeatTopicLater(topic: Topic) {
+    let repeatDate = moveDate(localDateKey(), 1);
+    while (!isStudyDate(repeatDate, studyDays)) repeatDate = moveDate(repeatDate, 1);
+    await saveSetting(`planner.repeat.${topic.id}`, repeatDate);
+    setSelectedDate(repeatDate);
+    setCalendarMonth(repeatDate.slice(0, 7));
+    setView("calendar");
+    setMessage(`${topic.title} has been moved to ${fullDateLabel(repeatDate)}.`);
+  }
+
   async function recordTest(event: FormEvent) {
     event.preventDefault();
     const topic = TOPICS.find((item) => item.id === testTopicId);
@@ -581,8 +722,6 @@ export default function StudyDashboard({
       const resultPercentage = Number(result.percentage ?? percentage(score, maxScore));
       const awardedStage = Number(result.awardedStage ?? 1);
       const secure = result.secure === true;
-      const evidencePasses = Number(result.evidencePasses ?? 0);
-      const hasTimedPass = result.hasTimedPass === true;
       const now = new Date().toISOString();
       const existing = progressMap.get(topic.id);
       const newProgress: ProgressItem = {
@@ -626,14 +765,13 @@ export default function StudyDashboard({
       }));
       setTestScore("");
       setTestNote("");
+      const guidance = effortGuidance(resultPercentage, testError);
       if (secure) {
-        setMessage(`${resultPercentage}% — topic is Secure with repeated, timed evidence.`);
+        setMessage(`${guidance.effort}: ${guidance.next}`);
       } else if (resultPercentage >= subjectThreshold(topic.subject)) {
-        setMessage(
-          `${resultPercentage}% — secure evidence ${evidencePasses}/2${hasTimedPass ? " with timed proof" : "; one pass must be timed"}.`,
-        );
+        setMessage(`${guidance.effort}: ${guidance.next}`);
       } else {
-        setMessage(`${resultPercentage}% — the lost-mark category has been added to the correction plan.`);
+        setMessage(`${guidance.effort}: ${guidance.next}`);
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The result was not saved.");
@@ -657,9 +795,9 @@ export default function StudyDashboard({
         <div className="brand"><div className="brand-mark">T</div><div><strong>Talha</strong><span>CIE 2027</span></div></div>
         <nav aria-label="Main navigation">
           {([
-            ["today", "Today", "01"], ["syllabus", "Syllabus", "02"],
-            ["quizzes", "Quizzes", "03"], ["tests", "Tests", "04"],
-            ["plan", "Study plan", "05"], ["parent", "Parent view", "06"],
+            ["today", "Today", "01"], ["calendar", "Calendar", "02"],
+            ["syllabus", "Syllabus", "03"], ["quizzes", "Quizzes", "04"],
+            ["tests", "Tests", "05"], ["plan", "Study plan", "06"], ["parent", "Parent view", "07"],
           ] as Array<[View, string, string]>).map(([key, label, number]) => (
             <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key)}><span>{number}</span>{label}</button>
           ))}
@@ -670,7 +808,7 @@ export default function StudyDashboard({
 
       <main className="main-area">
         <header className="topbar">
-          <div><span className="eyebrow">CAMBRIDGE IGCSE · FOUR SUBJECTS</span><h1>{view === "parent" ? "Parent overview" : view === "syllabus" ? "Syllabus map" : view === "quizzes" ? "Topic quizzes" : view === "tests" ? "Tests & retention" : view === "plan" ? "Adaptive study plan" : `${greeting}, Talha`}</h1></div>
+          <div><span className="eyebrow">CAMBRIDGE IGCSE · FOUR SUBJECTS</span><h1>{view === "parent" ? "Parent overview" : view === "calendar" ? "Daily study calendar" : view === "syllabus" ? "Syllabus map" : view === "quizzes" ? "Topic quizzes" : view === "tests" ? "Tests & retention" : view === "plan" ? "Adaptive study plan" : `${greeting}, Talha`}</h1></div>
           <div className="account-pill"><span>{displayName.slice(0, 1).toUpperCase()}</span><div><strong>{displayName}</strong><small>{lastSynced ? `Synced ${lastSynced.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : view === "parent" ? "Parent mode" : "Secure family access"}</small></div></div>
         </header>
 
@@ -682,23 +820,42 @@ export default function StudyDashboard({
               <StatRing value={stats.readiness} label="evidence readiness" />
             </section>
             <section className="section-block">
-              <div className="section-heading"><div><span className="eyebrow">TODAY&apos;S FINISH LINE</span><h2>{todayMissions.length} achievable steps · {todayMissions.reduce((sum, mission) => sum + mission.minutes, 0)} minutes</h2></div><span className="quiet">Start small · focus · correct · finish</span></div>
-              <div className="today-grid">
-                {todayMissions.map((mission) => {
-                  const topic = mission.topic;
-                  const item = progressMap.get(topic.id);
-                  const topicStage = item?.stage ?? 0;
-                  const reviewedQuiz = hasReviewedQuiz(topic.id);
-                  const actionLabel = topicStage === 0
-                    ? "Mark learning"
-                    : topicStage === 1 && reviewedQuiz
-                      ? "Take quiz"
-                      : "Record evidence";
-                  return <article className={`focus-card ${subjectClass(topic.subject)}`} key={`${mission.label}-${topic.id}`}><div className="card-top"><span>{mission.label} · {SUBJECT_META[topic.subject].short} {topic.code}</span>{isRevisionDue(item) && <b>RECALL DUE</b>}</div><h3>{topic.title}</h3><p className="mission-reason">{mission.reason}</p><p>{topic.tip}</p><div className="card-bottom"><span>{mission.minutes} min today</span><button disabled={saving} onClick={() => { if (topicStage === 1 && reviewedQuiz) { openQuiz(topic); } else if (mission.action === "test" || mission.action === "correct" || topicStage >= 1) { setTestTopicId(topic.id); setTestPaper(SUBJECT_PROFILES[topic.subject].papers[0]); setView("tests"); setMessage(`Record evidence after completing ${topic.title}.`); } else { void updateStage(topic, 1); } }}>{actionLabel}</button></div></article>;
-                })}
-              </div>
+              <div className="section-heading"><div><span className="eyebrow">TODAY&apos;S CHECKLIST</span><h2>{(planner.effective.get(todayKey) ?? []).length} tasks · {(planner.effective.get(todayKey) ?? []).reduce((sum, task) => sum + task.minutes, 0)} minutes</h2></div><button className="inline-calendar-button" onClick={() => { setSelectedDate(todayKey); setCalendarMonth(todayKey.slice(0, 7)); setView("calendar"); }}>Open full calendar →</button></div>
+              <div className="today-checklist">{(planner.effective.get(todayKey) ?? []).map((task) => { const checked = Boolean(settings[`planner.done.${task.id}`]); return <label className={`planner-task ${subjectClass(task.topic.subject)} ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><small>{task.topic.subject} · {task.minutes} min{task.carriedForward ? " · carried forward" : ""}</small><strong>{task.topic.code} · {task.topic.title}</strong></span><button type="button" onClick={() => { revealTopic(task.topic); setView("syllabus"); }}>Study</button></label>; })}{!(planner.effective.get(todayKey) ?? []).length && <EmptyMessage>Today&apos;s work is complete. Well done—take the win and return tomorrow.</EmptyMessage>}</div>
             </section>
           </>
+        )}
+
+        {view === "calendar" && (
+          <section className="calendar-layout no-top">
+            <div className="calendar-summary panel">
+              <div><span className="eyebrow">LIVING STUDY PLAN</span><h2>{planner.overdueCount ? `${planner.overdueCount} missed task${planner.overdueCount === 1 ? "" : "s"} safely carried forward` : "The schedule is up to date"}</h2><p>Checking or unchecking a task immediately recalculates future dates without exceeding the daily study-time limit.</p></div>
+              <div className="timeline-status"><span>Predicted syllabus completion</span><strong>{fullDateLabel(planner.predictedCompletion)}</strong><small>{planner.predictedCompletion <= settings.targetDate ? "Within the current target" : "Later than the current target - adjust time or study days"}</small></div>
+            </div>
+            <div className="calendar-main">
+              <div className="month-calendar panel">
+                <div className="month-nav"><button onClick={() => { const date = dateFromKey(`${calendarMonth}-01`); date.setMonth(date.getMonth() - 1); setCalendarMonth(localDateKey(date).slice(0, 7)); }}>←</button><h2>{new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" }).format(dateFromKey(`${calendarMonth}-01`))}</h2><button onClick={() => { const date = dateFromKey(`${calendarMonth}-01`); date.setMonth(date.getMonth() + 1); setCalendarMonth(localDateKey(date).slice(0, 7)); }}>→</button></div>
+                <div className="calendar-weekdays">{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => <span key={day}>{day}</span>)}</div>
+                <div className="calendar-grid">{calendarDays.map((day, index) => {
+                  if (!day) return <span className="calendar-blank" key={`blank-${index}`} />;
+                  const tasks = day < todayKey ? (planner.canonical.get(day) ?? []) : (planner.effective.get(day) ?? []);
+                  const done = tasks.filter((task) => Boolean(settings[`planner.done.${task.id}`])).length;
+                  const missed = day < todayKey && tasks.some((task) => !settings[`planner.done.${task.id}`]);
+                  return <button key={day} className={`${selectedDate === day ? "selected" : ""} ${day === todayKey ? "today" : ""} ${missed ? "missed" : ""}`} onClick={() => setSelectedDate(day)}><b>{Number(day.slice(-2))}</b>{tasks.length > 0 && <span>{done}/{tasks.length}</span>}</button>;
+                })}</div>
+              </div>
+              <div className="date-tasks panel">
+                <div className="section-heading"><div><span className="eyebrow">ASSIGNED TASKS</span><h2>{fullDateLabel(selectedDate)}</h2></div><strong>{selectedPlannerTasks.reduce((sum, task) => sum + task.minutes, 0)} min</strong></div>
+                {SUBJECTS.map((plannerSubject) => {
+                  const subjectTasks = selectedPlannerTasks.filter((task) => task.topic.subject === plannerSubject);
+                  if (!subjectTasks.length) return null;
+                  return <div className={`subject-task-group ${subjectClass(plannerSubject)}`} key={plannerSubject}><h3><i style={{ background: SUBJECT_META[plannerSubject].color }} />{plannerSubject}<span>{subjectTasks.reduce((sum, task) => sum + task.minutes, 0)} min</span></h3>{subjectTasks.map((task) => { const checked = Boolean(settings[`planner.done.${task.id}`]); return <label className={`planner-task ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><strong>{task.topic.code} · {task.topic.title}</strong><small>Session {task.session}/{task.sessions} · {task.minutes} min{task.carriedForward ? ` · moved from ${fullDateLabel(task.originalDate)}` : ""}</small></span><button type="button" onClick={() => { revealTopic(task.topic); setView("syllabus"); }}>Open</button></label>; })}</div>;
+                })}
+                {!selectedPlannerTasks.length && <EmptyMessage>{isStudyDate(selectedDate, studyDays) ? "No task is assigned on this date." : "Rest and consolidation day. Missed work will move to the next available study day."}</EmptyMessage>}
+              </div>
+            </div>
+            <div className="notification-settings panel"><div><span className="eyebrow">REMINDERS</span><h2>Study notification</h2><p>The browser will ask permission. On devices that restrict background web notifications, the LMS will still show overdue work when opened.</p></div><label>Reminder time<input type="time" value={settings.reminderTime} onChange={(event) => saveSetting("reminderTime", event.target.value)} /></label><button onClick={() => void enableReminders()}>{remindersEnabled ? "Send test notification" : "Enable notifications"}</button></div>
+          </section>
         )}
 
         {view === "syllabus" && (
@@ -731,7 +888,7 @@ export default function StudyDashboard({
                 const workloadShare = ((topic.minutes / subjectMinutes) * 100).toFixed(1);
                 const sessions = Math.max(1, Math.ceil(topic.minutes / 45));
                 const guidance = effortGuidance(item?.bestScore ?? 0, tests.find((attempt) => attempt.topicId === topic.id)?.errorCategory);
-                return <article className="topic-row" key={topic.id}><button className={`stage-button ${stageClass(topicStage)}`} onClick={() => updateStage(topic, topicStage === 3 ? 3 : topicStage + 1)} aria-label={`Update ${topic.title}`}><span>{topicStage === 0 ? "" : topicStage === 3 ? "★" : "✓"}</span></button><div className="topic-main"><div className="topic-kicker"><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><span>{topic.code}</span><span>{topic.unit}</span></div><h3>{topic.title}</h3><div className="topic-meta"><span>{importanceLabel(topic.importance)} exam priority</span><span>{topic.paper}</span><span>{Math.ceil(topic.minutes / 60 * 10) / 10}h · {sessions} session{sessions === 1 ? "" : "s"}</span><span>{workloadShare}% of subject workload</span><span>{topicStage ? guidance.effort : "Not started"}</span>{hasReviewedQuiz(topic.id) && <span>Reviewed quiz ready</span>}</div>{open && <div className="topic-detail"><div><strong>How to complete it</strong><p>Learn the key idea, work through an example, practise independently, correct errors, then return for a recall check.</p></div><div><strong>What matters in the exam</strong><p>{topic.tip}</p></div><div className="topic-links"><strong>Linked learning path</strong>{prerequisiteTopics(topic.id).length ? <p>Builds on: {prerequisiteTopics(topic.id).map((linked) => linked.title).join(" · ")}</p> : <p>No earlier foundation required.</p>}{linkedNextTopics(topic.id).length > 0 && <p>Leads to: {linkedNextTopics(topic.id).map((linked) => linked.title).join(" · ")}</p>}<button onClick={() => setChosenTopicId(topic.id)}>Show full path above</button></div><div className="stuck-box"><strong>Finding this difficult?</strong><p>Choose the help that matches the problem.</p><div><button onClick={() => setMessage("Open the linked prerequisite first, then return to this topic in a shorter session.")}>I forgot an earlier idea</button><button onClick={() => setMessage("Review one worked example, then try three easier guided questions before continuing.")}>I cannot solve questions</button><button onClick={() => setMessage("Pause now and repeat this topic tomorrow in a smaller 25-minute block.")}>Repeat this later</button></div></div><a href={youtubeSearchUrl(topic)} target="_blank" rel="noreferrer">Watch a selected topic lesson ↗</a></div>}</div><div className="topic-actions"><span className={`status-pill ${stageClass(topicStage)}`}>{STAGES[topicStage]}</span>{hasReviewedQuiz(topic.id) && topicStage > 0 && <button className="quiz-row-button" onClick={() => openQuiz(topic)}>Quiz</button>}{topicStage > 0 && <button onClick={() => updateStage(topic, 0)} aria-label={`Reset ${topic.title} to Not started`}>Reset</button>}<button onClick={() => { setExpanded(open ? null : topic.id); setStuckTopicId(open ? null : topic.id); }}>{open ? "Close" : "Lesson help"}</button></div></article>;
+                return <article className="topic-row" key={topic.id}><button className={`stage-button ${stageClass(topicStage)}`} onClick={() => updateStage(topic, topicStage === 3 ? 3 : topicStage + 1)} aria-label={`Update ${topic.title}`}><span>{topicStage === 0 ? "" : topicStage === 3 ? "★" : "✓"}</span></button><div className="topic-main"><div className="topic-kicker"><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><span>{topic.code}</span><span>{topic.unit}</span></div><h3>{topic.title}</h3><div className="topic-meta"><span>{importanceLabel(topic.importance)} exam priority</span><span>{topic.paper}</span><span>{Math.ceil(topic.minutes / 60 * 10) / 10}h · {sessions} session{sessions === 1 ? "" : "s"}</span><span>{workloadShare}% of subject workload</span><span>{topicStage ? guidance.effort : "Not started"}</span>{hasReviewedQuiz(topic.id) && <span>Reviewed quiz ready</span>}</div>{open && <div className="topic-detail"><div><strong>How to complete it</strong><p>Learn the key idea, work through an example, practise independently, correct errors, then return for a recall check.</p></div><div><strong>What matters in the exam</strong><p>{topic.tip}</p></div><div className="topic-links"><strong>Linked learning path</strong>{prerequisiteTopics(topic.id).length ? <p>Builds on: {prerequisiteTopics(topic.id).map((linked) => linked.title).join(" · ")}</p> : <p>No earlier foundation required.</p>}{linkedNextTopics(topic.id).length > 0 && <p>Leads to: {linkedNextTopics(topic.id).map((linked) => linked.title).join(" · ")}</p>}<button onClick={() => setChosenTopicId(topic.id)}>Show full path above</button></div><div className="stuck-box"><strong>Finding this difficult?</strong><p>Choose the help that matches the problem.</p><div><button onClick={() => openPrerequisiteHelp(topic)}>I forgot an earlier idea</button><button onClick={() => openPracticeHelp(topic)}>I cannot solve questions</button><button onClick={() => void repeatTopicLater(topic)}>Repeat this later</button></div></div><a href={youtubeSearchUrl(topic)} target="_blank" rel="noreferrer">Watch a selected topic lesson ↗</a></div>}</div><div className="topic-actions"><span className={`status-pill ${stageClass(topicStage)}`}>{STAGES[topicStage]}</span>{hasReviewedQuiz(topic.id) && topicStage > 0 && <button className="quiz-row-button" onClick={() => openQuiz(topic)}>Quiz</button>}{topicStage > 0 && <button onClick={() => updateStage(topic, 0)} aria-label={`Reset ${topic.title} to Not started`}>Reset</button>}<button onClick={() => { setExpanded(open ? null : topic.id); setStuckTopicId(open ? null : topic.id); }}>{open ? "Close" : "Lesson help"}</button></div></article>;
               })}
               {filteredTopics.length === 0 && <EmptyMessage>No topics match these filters.</EmptyMessage>}
             </div>
