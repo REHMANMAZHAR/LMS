@@ -152,6 +152,10 @@ const TOPIC_FOCUSES: Record<string, string[]> = {
   "math-e9-4": ["bar charts, pie charts and frequency diagrams", "stem-and-leaf and box plots", "frequency polygons and time-series graphs", "choosing and criticising statistical displays"],
 };
 
+export function topicLessonCount(topic: Topic, minutesPerSession: number) {
+  return Math.max(1, Math.ceil(topic.minutes / minutesPerSession), TOPIC_FOCUSES[topic.id]?.length ?? 0);
+}
+
 export function topicLesson(topic: Topic, session: number, sessions: number): GuidedLesson {
   const exactFocus = TOPIC_FOCUSES[topic.id]?.[(session - 1) % TOPIC_FOCUSES[topic.id].length];
   const phase = exactFocus ?? (sessions === 1 ? "Learn and apply" : session === 1 ? "Foundations and key knowledge" : session === sessions ? "Exam application and correction" : "Develop the next syllabus skill");
