@@ -110,7 +110,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   examDate: "2027-05-21",
   dailyMinutes: "450",
   studyDays: "7",
-  plannerStartDate: "2026-08-29",
+  plannerStartDate: "2026-08-31",
   reminderTime: "09:00",
   remindersEnabled: "false",
 };
@@ -396,17 +396,24 @@ export default function StudyDashboard({
       if (!response.ok) throw new Error("Progress could not be synchronized.");
       const data = (await response.json()) as FamilyState;
       const legacyTwoHourPlan = data.settings?.dailyMinutes === "120" && data.settings?.studyDays === "6";
-      const migratedSettings = legacyTwoHourPlan
-        ? { ...data.settings, dailyMinutes: "450", studyDays: "7", targetDate: "2027-02-21", examDate: "2027-05-21" }
-        : data.settings;
+      const oldWeekendStart = data.settings?.plannerStartDate === "2026-08-29";
+      const migratedSettings = {
+        ...data.settings,
+        ...(legacyTwoHourPlan ? { dailyMinutes: "450", studyDays: "7", targetDate: "2027-02-21", examDate: "2027-05-21" } : {}),
+        ...(oldWeekendStart ? { plannerStartDate: "2026-08-31" } : {}),
+      };
       setFamilyState({
         progress: data.progress ?? [],
         activity: data.activity ?? [],
         attempts: data.attempts ?? [],
         settings: { ...DEFAULT_SETTINGS, ...(migratedSettings ?? {}) },
       });
-      if (legacyTwoHourPlan) {
-        await Promise.all(Object.entries({ dailyMinutes: "450", studyDays: "7", targetDate: "2027-02-21", examDate: "2027-05-21" }).map(([key, value]) => fetch("/api/state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setting", key, value }) })));
+      if (legacyTwoHourPlan || oldWeekendStart) {
+        const changes = {
+          ...(legacyTwoHourPlan ? { dailyMinutes: "450", studyDays: "7", targetDate: "2027-02-21", examDate: "2027-05-21" } : {}),
+          ...(oldWeekendStart ? { plannerStartDate: "2026-08-31" } : {}),
+        };
+        await Promise.all(Object.entries(changes).map(([key, value]) => fetch("/api/state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setting", key, value }) })));
       }
       setLastSynced(new Date());
     } catch (error) {
