@@ -104,10 +104,10 @@ function topicStream(topic: Topic): StudyStream {
 }
 
 const DEFAULT_SETTINGS: Record<string, string> = {
-  targetDate: "2027-02-15",
-  examDate: "2027-05-01",
-  dailyMinutes: "120",
-  studyDays: "6",
+  targetDate: "2027-02-21",
+  examDate: "2027-05-21",
+  dailyMinutes: "450",
+  studyDays: "7",
   plannerStartDate: "2026-08-29",
   reminderTime: "09:00",
   remindersEnabled: "false",
@@ -206,10 +206,11 @@ function buildPlanner(
   settings: Record<string, string>,
   today: string,
 ) {
-  const dailyCapacity = Math.max(30, Number(settings.dailyMinutes || 120));
-  const studyDays = Math.max(1, Number(settings.studyDays || 6));
+  const weekdayCapacity = Math.max(150, Number(settings.dailyMinutes || 450));
+  const studyDays = Math.max(1, Number(settings.studyDays || 7));
   const startDate = settings.plannerStartDate || today;
-  const streamMinutes = STUDY_STREAMS.map((_, index) => Math.floor(dailyCapacity / STUDY_STREAMS.length) + (index < dailyCapacity % STUDY_STREAMS.length ? 1 : 0));
+  const minutesForDate = (key: string) => dateFromKey(key).getDay() === 0 ? 120 : Math.round(weekdayCapacity / STUDY_STREAMS.length);
+  const streamMinutes = STUDY_STREAMS.map(() => Math.round(weekdayCapacity / STUDY_STREAMS.length));
   const streamQueues = STUDY_STREAMS.map((stream, streamIndex) => {
     const queue: Omit<PlannerTask, "originalDate" | "scheduledDate" | "carriedForward">[] = [];
     const minutesPerSession = streamMinutes[streamIndex];
@@ -247,10 +248,12 @@ function buildPlanner(
           "Pakistan History": ["Paper 1 source and judgement practice"],
           "Pakistan Geography": ["Paper 2 data and case-study practice"],
         };
-        const label = paperCycle[stream.name][practiceDay % paperCycle[stream.name].length];
-        return { id: `past:${stream.name}:${date}`, topic: { ...topic, code: "PAST PAPER", title: label }, stream: stream.name, kind: "past-paper" as const, session: 1, sessions: 1, minutes: streamMinutes[streamIndex] };
+        const paperLabel = paperCycle[stream.name][practiceDay % paperCycle[stream.name].length];
+        const marathon = date >= "2027-02-22";
+        const label = marathon ? paperLabel : `Topical questions: ${topic.title}`;
+        return { id: `past:${stream.name}:${date}`, topic: { ...topic, code: marathon ? "PAST PAPER" : "EXAM PRACTICE", title: label }, stream: stream.name, kind: "past-paper" as const, session: 1, sessions: 1, minutes: minutesForDate(date) };
       });
-      canonical.set(date, dayTasks.map((task) => ({ ...task, originalDate: date, scheduledDate: date, carriedForward: false })));
+      canonical.set(date, dayTasks.map((task) => ({ ...task, minutes: minutesForDate(date), originalDate: date, scheduledDate: date, carriedForward: false })));
       practiceDay += 1;
     }
     date = moveDate(date, 1);
@@ -263,26 +266,24 @@ function buildPlanner(
   };
   const doneDate = (taskId: string) => settings[`planner.done.${taskId}`] || "";
   const incomplete = [...canonical.values()].flat().filter((task) => !doneDate(task.id) && !logicalCompletion(task));
-  incomplete.sort((a, b) => a.originalDate.localeCompare(b.originalDate));
   const effective = new Map<string, PlannerTask[]>();
-  let effectiveDate = today;
-  let effectiveUsed = 0;
   const repeatedTopics = new Set<string>();
-  incomplete.forEach((task) => {
-    const repeatDate = settings[`planner.repeat.${task.topic.id}`];
-    if (repeatDate && repeatDate >= today && !repeatedTopics.has(task.topic.id)) {
-      repeatedTopics.add(task.topic.id);
-      const repeated = { ...task, scheduledDate: repeatDate, carriedForward: repeatDate !== task.originalDate };
-      effective.set(repeatDate, [...(effective.get(repeatDate) ?? []), repeated]);
-      return;
-    }
-    while (!isStudyDate(effectiveDate, studyDays) || (effectiveUsed > 0 && effectiveUsed + task.minutes > dailyCapacity)) {
+  STUDY_STREAMS.forEach((stream) => {
+    const queue = incomplete.filter((task) => task.stream === stream.name).sort((a, b) => a.originalDate.localeCompare(b.originalDate));
+    let effectiveDate = today;
+    queue.forEach((task) => {
+      const repeatDate = settings[`planner.repeat.${task.topic.id}`];
+      if (repeatDate && repeatDate >= today && !repeatedTopics.has(task.topic.id)) {
+        repeatedTopics.add(task.topic.id);
+        const repeated = { ...task, scheduledDate: repeatDate, carriedForward: repeatDate !== task.originalDate };
+        effective.set(repeatDate, [...(effective.get(repeatDate) ?? []), repeated]);
+        return;
+      }
+      while (!isStudyDate(effectiveDate, studyDays)) effectiveDate = moveDate(effectiveDate, 1);
+      const moved = { ...task, minutes: minutesForDate(effectiveDate), scheduledDate: effectiveDate, carriedForward: task.originalDate < effectiveDate };
+      effective.set(effectiveDate, [...(effective.get(effectiveDate) ?? []), moved]);
       effectiveDate = moveDate(effectiveDate, 1);
-      effectiveUsed = 0;
-    }
-    const moved = { ...task, scheduledDate: effectiveDate, carriedForward: task.originalDate < effectiveDate };
-    effective.set(effectiveDate, [...(effective.get(effectiveDate) ?? []), moved]);
-    effectiveUsed += task.minutes;
+    });
   });
   [...canonical.values()].flat().forEach((task) => {
     const completedOn = doneDate(task.id);
@@ -355,12 +356,19 @@ export default function StudyDashboard({
       }
       if (!response.ok) throw new Error("Progress could not be synchronized.");
       const data = (await response.json()) as FamilyState;
+      const legacyTwoHourPlan = data.settings?.dailyMinutes === "120" && data.settings?.studyDays === "6";
+      const migratedSettings = legacyTwoHourPlan
+        ? { ...data.settings, dailyMinutes: "450", studyDays: "7", targetDate: "2027-02-21", examDate: "2027-05-21" }
+        : data.settings;
       setFamilyState({
         progress: data.progress ?? [],
         activity: data.activity ?? [],
         attempts: data.attempts ?? [],
-        settings: { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) },
+        settings: { ...DEFAULT_SETTINGS, ...(migratedSettings ?? {}) },
       });
+      if (legacyTwoHourPlan) {
+        await Promise.all(Object.entries({ dailyMinutes: "450", studyDays: "7", targetDate: "2027-02-21", examDate: "2027-05-21" }).map(([key, value]) => fetch("/api/state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setting", key, value }) })));
+      }
       setLastSynced(new Date());
     } catch (error) {
       if (showError) {
@@ -454,10 +462,10 @@ export default function StudyDashboard({
 
   const settings = useMemo(() => ({ ...DEFAULT_SETTINGS, ...familyState.settings }), [familyState.settings]);
   const remindersEnabled = settings.remindersEnabled === "true" && typeof Notification !== "undefined" && Notification.permission === "granted";
-  const studyDays = Number(settings.studyDays || 6);
+  const studyDays = Number(settings.studyDays || 7);
   const availableDays = studyDaysUntil(settings.targetDate, studyDays);
   const requiredDaily = Math.ceil(stats.remainingMinutes / availableDays);
-  const plannedDaily = Number(settings.dailyMinutes || 120);
+  const plannedDaily = Number(settings.dailyMinutes || 450);
   const feasible = plannedDaily >= requiredDaily;
   const todayKey = localDateKey();
   const planner = useMemo(
@@ -864,7 +872,7 @@ export default function StudyDashboard({
         {view === "calendar" && (
           <section className="calendar-layout no-top">
             <div className="calendar-summary panel">
-              <div><span className="eyebrow">LIVING STUDY PLAN</span><h2>{planner.overdueCount ? `${planner.overdueCount} missed task${planner.overdueCount === 1 ? "" : "s"} safely carried forward` : "The schedule is up to date"}</h2><p>Checking or unchecking a task immediately recalculates future dates without exceeding the daily study-time limit.</p></div>
+              <div><span className="eyebrow">HOMESCHOOL STUDY PLAN</span><h2>{planner.overdueCount ? `${planner.overdueCount} missed task${planner.overdueCount === 1 ? "" : "s"} safely carried forward` : "All five streams are on schedule"}</h2><p>Monday-Saturday assigns 90 minutes per stream. Sunday assigns two hours per stream for consolidation, correction and testing. A missed stream moves its own remaining sequence forward.</p></div>
               <div className="timeline-status"><span>Predicted syllabus completion</span><strong>{fullDateLabel(planner.predictedCompletion)}</strong><small>{planner.predictedCompletion <= settings.targetDate ? "Within the current target" : "Later than the current target - adjust time or study days"}</small></div>
             </div>
             <div className="syllabus-bars panel">
@@ -888,7 +896,7 @@ export default function StudyDashboard({
                 {STUDY_STREAMS.map((stream) => {
                   const subjectTasks = selectedPlannerTasks.filter((task) => task.stream === stream.name);
                   if (!subjectTasks.length) return null;
-                  return <div className="subject-task-group" key={stream.name}><h3><i style={{ background: stream.color }} />{stream.name}<span>{subjectTasks.reduce((sum, task) => sum + task.minutes, 0)} min</span></h3>{subjectTasks.map((task) => { const checked = Boolean(settings[`planner.done.${task.id}`]); return <label className={`planner-task ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><strong>{task.topic.code} · {task.topic.title}</strong><small>{task.kind === "past-paper" ? "Past-paper phase" : `Session ${task.session}/${task.sessions}`} · {task.minutes} min{task.carriedForward ? ` · moved from ${fullDateLabel(task.originalDate)}` : ""}</small></span><button type="button" onClick={() => { revealTopic(task.topic); setView(task.kind === "past-paper" ? "tests" : "syllabus"); }}>{task.kind === "past-paper" ? "Record" : "Open"}</button></label>; })}</div>;
+                  return <div className="subject-task-group" key={stream.name}><h3><i style={{ background: stream.color }} />{stream.name}<span>{subjectTasks.reduce((sum, task) => sum + task.minutes, 0)} min</span></h3>{subjectTasks.map((task) => { const checked = Boolean(settings[`planner.done.${task.id}`]); return <label className={`planner-task ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><strong>{task.topic.code} · {task.topic.title}</strong><small>{task.kind === "past-paper" ? (task.topic.code === "PAST PAPER" ? "Past-paper marathon" : "Topical exam practice") : `Session ${task.session}/${task.sessions} · topic estimate ${Math.round(task.topic.minutes / 60 * 10) / 10}h`} · today {task.minutes} min{task.carriedForward ? ` · moved from ${fullDateLabel(task.originalDate)}` : ""}</small></span><button type="button" onClick={() => { revealTopic(task.topic); setView(task.kind === "past-paper" ? "tests" : "syllabus"); }}>{task.kind === "past-paper" ? "Record" : "Open"}</button></label>; })}</div>;
                 })}
                 {!selectedPlannerTasks.length && <EmptyMessage>{isStudyDate(selectedDate, studyDays) ? "No task is assigned on this date." : "Rest and consolidation day. Missed work will move to the next available study day."}</EmptyMessage>}
               </div>
@@ -980,7 +988,7 @@ export default function StudyDashboard({
 
         {view === "plan" && (
           <section className="plan-layout no-top">
-            <div className="panel plan-settings"><span className="eyebrow">YOUR CAPACITY</span><h2>Set the finish line</h2><p>Changes recalculate the remaining daily workload instantly.</p><label>First syllabus completion date<input type="date" value={settings.targetDate} onChange={(event) => saveSetting("targetDate", event.target.value)} /></label><label>Final examination date<input type="date" value={settings.examDate} onChange={(event) => saveSetting("examDate", event.target.value)} /></label><div className="form-row"><label>Study days each week<input type="number" min="1" max="7" value={settings.studyDays} onChange={(event) => saveSetting("studyDays", event.target.value)} /></label><label>Minutes available daily<input type="number" min="15" max="600" step="15" value={settings.dailyMinutes} onChange={(event) => saveSetting("dailyMinutes", event.target.value)} /></label></div></div>
+            <div className="panel plan-settings"><span className="eyebrow">HOMESCHOOL CAPACITY</span><h2>Set the finish line</h2><p>The supplied master plan uses five 90-minute subject pools Monday-Saturday and a ten-hour Sunday consolidation pool. Changes recalculate every remaining date.</p><label>First syllabus completion date<input type="date" value={settings.targetDate} onChange={(event) => saveSetting("targetDate", event.target.value)} /></label><label>Final examination date<input type="date" value={settings.examDate} onChange={(event) => saveSetting("examDate", event.target.value)} /></label><div className="form-row"><label>Study days each week<input type="number" min="1" max="7" value={settings.studyDays} onChange={(event) => saveSetting("studyDays", event.target.value)} /></label><label>Monday-Saturday total minutes<input type="number" min="150" max="600" step="15" value={settings.dailyMinutes} onChange={(event) => saveSetting("dailyMinutes", event.target.value)} /></label></div></div>
             <div className={`capacity-card ${feasible ? "feasible" : "behind"}`}><span className="eyebrow light">PLAN CHECK</span><h2>{feasible ? "The plan is achievable." : "More time is needed."}</h2><p>{Math.ceil(stats.remainingMinutes / 60)} hours of weighted work remain across learning, practice and secure evidence.</p><div className="capacity-numbers"><div><span>Required daily</span><strong>{requiredDaily}<small> min</small></strong></div><div><span>Available daily</span><strong>{plannedDaily}<small> min</small></strong></div><div><span>Study days left</span><strong>{availableDays}</strong></div></div><p className="capacity-advice">{feasible ? `At this pace, Talha has a ${plannedDaily - requiredDaily}-minute daily buffer for timed papers, corrections and missed work.` : `Add ${requiredDaily - plannedDaily} minutes per study day, add study days, or move the completion date.`}</p></div>
             <div className="panel roadmap-panel"><div className="section-heading"><div><span className="eyebrow">COMPLETE ROADMAP</span><h2>Every subject, hour and next step</h2></div><span className="quiet">Progress is weighted by human study time—not topic count</span></div><div className="roadmap-phases"><article className="active"><span>1</span><div><strong>Learn the syllabus</strong><small>Now → {fullDateLabel(settings.targetDate)}</small></div></article><article><span>2</span><div><strong>Topical exam practice</strong><small>After first coverage</small></div></article><article><span>3</span><div><strong>Mixed timed papers</strong><small>Build speed and application</small></div></article><article><span>4</span><div><strong>Final revision</strong><small>Weak areas and full mocks</small></div></article></div><div className="roadmap-grid">{roadmapSubjects.map((item) => <article key={item.subject} className={subjectClass(item.subject)}><div className="roadmap-title"><i style={{ background: SUBJECT_META[item.subject].color }} /><div><strong>{item.subject}</strong><small>{SUBJECT_META[item.subject].code}</small></div><b>{item.progress}%</b></div><div className="roadmap-bar"><span style={{ width: `${item.progress}%` }} /></div><div className="roadmap-numbers"><span><b>{Math.ceil(item.totalMinutes / 60)}h</b> total</span><span><b>{Math.ceil(item.remainingMinutes / 60)}h</b> remaining</span></div><p>Next: <strong>{item.nextTopic ? `${item.nextTopic.code} · ${item.nextTopic.title}` : "Syllabus learning complete"}</strong></p><button onClick={() => { if (item.nextTopic) { revealTopic(item.nextTopic); setView("syllabus"); } }}>Open next topic</button></article>)}</div></div>
             <div className="panel subject-strategy"><div className="section-heading"><div><span className="eyebrow">CURRENT STUDY ALLOCATION</span><h2>Time follows present learning needs</h2></div><span className="quiet">Rebalanced as real evidence is recorded</span></div><div className="strategy-grid">{SUBJECTS.map((item) => { const profile = SUBJECT_PROFILES[item]; return <article key={item}><div className="strategy-title"><i style={{ background: SUBJECT_META[item].color }} /><strong>{item}</strong><span>{profile.weeklyShare}% of study time</span></div><p><b>{roadmapSubjects.find((row) => row.subject === item)?.progress ?? 0}% workload completed</b></p><p>{profile.diagnostic}</p><small>{profile.examHabit}</small></article>; })}</div></div>
