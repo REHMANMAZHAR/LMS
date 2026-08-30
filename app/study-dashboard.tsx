@@ -26,7 +26,7 @@ import {
 } from "./learning-model";
 import QuizView from "./quiz-view";
 import { REVIEWED_QUIZ_TOPIC_IDS, hasReviewedQuiz, type QuizResultPayload } from "./quiz-model";
-import { STARTER_LESSONS, sundayLesson, topicLesson, type GuidedLesson } from "./lesson-plan";
+import { STARTER_LESSONS, sundayLesson, topicLesson, topicLessonCount, type GuidedLesson } from "./lesson-plan";
 
 type View = "today" | "calendar" | "syllabus" | "quizzes" | "tests" | "plan" | "parent";
 type ProgressItem = {
@@ -233,7 +233,7 @@ function buildPlanner(
       });
     });
     TOPICS.filter((topic) => topicStream(topic) === stream.name && !starterTopicIds.has(topic.id)).forEach((topic) => {
-      const sessions = Math.max(1, Math.ceil(topic.minutes / minutesPerSession));
+      const sessions = topicLessonCount(topic, minutesPerSession);
       for (let session = 1; session <= sessions; session += 1) {
         queue.push({
           id: `${topic.id}:${session}`,
