@@ -26,6 +26,7 @@ import {
 } from "./learning-model";
 import QuizView from "./quiz-view";
 import { REVIEWED_QUIZ_TOPIC_IDS, hasReviewedQuiz, type QuizResultPayload } from "./quiz-model";
+import { STARTER_LESSONS, sundayLesson, topicLesson, type GuidedLesson } from "./lesson-plan";
 
 type View = "today" | "calendar" | "syllabus" | "quizzes" | "tests" | "plan" | "parent";
 type ProgressItem = {
@@ -79,7 +80,8 @@ type PlannerTask = {
   id: string;
   topic: Topic;
   stream: StudyStream;
-  kind: "syllabus" | "past-paper";
+  kind: "syllabus" | "revision" | "past-paper";
+  lesson: GuidedLesson;
   session: number;
   sessions: number;
   minutes: number;
@@ -214,7 +216,23 @@ function buildPlanner(
   const streamQueues = STUDY_STREAMS.map((stream, streamIndex) => {
     const queue: Omit<PlannerTask, "originalDate" | "scheduledDate" | "carriedForward">[] = [];
     const minutesPerSession = streamMinutes[streamIndex];
-    TOPICS.filter((topic) => topicStream(topic) === stream.name).forEach((topic) => {
+    const starterTopicIds = new Set<string>();
+    STARTER_LESSONS[stream.name].forEach((guided, index) => {
+      const topic = TOPICS.find((candidate) => candidate.id === guided.topicId);
+      if (!topic) return;
+      starterTopicIds.add(topic.id);
+      queue.push({
+        id: `guided:${stream.name}:${index + 1}`,
+        topic,
+        stream: stream.name,
+        kind: "syllabus",
+        lesson: guided,
+        session: index + 1,
+        sessions: STARTER_LESSONS[stream.name].length,
+        minutes: minutesPerSession,
+      });
+    });
+    TOPICS.filter((topic) => topicStream(topic) === stream.name && !starterTopicIds.has(topic.id)).forEach((topic) => {
       const sessions = Math.max(1, Math.ceil(topic.minutes / minutesPerSession));
       for (let session = 1; session <= sessions; session += 1) {
         queue.push({
@@ -222,6 +240,7 @@ function buildPlanner(
           topic,
           stream: stream.name,
           kind: "syllabus",
+          lesson: topicLesson(topic, session, sessions),
           session,
           sessions,
           minutes: minutesPerSession,
@@ -233,12 +252,30 @@ function buildPlanner(
   const canonical = new Map<string, PlannerTask[]>();
   let date = startDate;
   let practiceDay = 0;
-  const examDate = settings.examDate || "2027-05-01";
+  const lastLessonTitles = STUDY_STREAMS.map(() => "the week's assigned lessons");
+  const examDate = settings.examDate || "2027-05-21";
   while (date <= examDate) {
     if (isStudyDate(date, studyDays)) {
+      const isSunday = dateFromKey(date).getDay() === 0;
       const dayTasks = STUDY_STREAMS.map((stream, streamIndex) => {
+        if (isSunday) {
+          const topic = TOPICS.find((candidate) => topicStream(candidate) === stream.name) ?? TOPICS[0];
+          return {
+            id: `revision:${stream.name}:${date}`,
+            topic,
+            stream: stream.name,
+            kind: "revision" as const,
+            lesson: sundayLesson(stream.name, lastLessonTitles[streamIndex]),
+            session: 1,
+            sessions: 1,
+            minutes: minutesForDate(date),
+          };
+        }
         const syllabusTask = streamQueues[streamIndex].shift();
-        if (syllabusTask) return syllabusTask;
+        if (syllabusTask) {
+          lastLessonTitles[streamIndex] = syllabusTask.lesson.title;
+          return syllabusTask;
+        }
         const topics = TOPICS.filter((topic) => topicStream(topic) === stream.name);
         const topic = topics[practiceDay % topics.length];
         const paperCycle: Record<StudyStream, string[]> = {
@@ -251,7 +288,9 @@ function buildPlanner(
         const paperLabel = paperCycle[stream.name][practiceDay % paperCycle[stream.name].length];
         const marathon = date >= "2027-02-22";
         const label = marathon ? paperLabel : `Topical questions: ${topic.title}`;
-        return { id: `past:${stream.name}:${date}`, topic: { ...topic, code: marathon ? "PAST PAPER" : "EXAM PRACTICE", title: label }, stream: stream.name, kind: "past-paper" as const, session: 1, sessions: 1, minutes: minutesForDate(date) };
+        const practiceTopic = { ...topic, code: marathon ? "PAST PAPER" : "EXAM PRACTICE", title: label };
+        const guide = topicLesson(practiceTopic, 1, 1);
+        return { id: `past:${stream.name}:${date}`, topic: practiceTopic, stream: stream.name, kind: "past-paper" as const, lesson: { ...guide, title: label }, session: 1, sessions: 1, minutes: minutesForDate(date) };
       });
       canonical.set(date, dayTasks.map((task) => ({ ...task, minutes: minutesForDate(date), originalDate: date, scheduledDate: date, carriedForward: false })));
       practiceDay += 1;
@@ -259,7 +298,7 @@ function buildPlanner(
     date = moveDate(date, 1);
   }
   const logicalCompletion = (task: PlannerTask) => {
-    if (task.kind === "past-paper") return false;
+    if (task.kind !== "syllabus") return false;
     const stage = progressMap.get(task.topic.id)?.stage ?? 0;
     const completedShare = [0, .45, .75, 1][stage] ?? 0;
     return task.session <= Math.floor(task.sessions * completedShare);
@@ -864,7 +903,7 @@ export default function StudyDashboard({
             </section>
             <section className="section-block">
               <div className="section-heading"><div><span className="eyebrow">TODAY&apos;S CHECKLIST</span><h2>{(planner.effective.get(todayKey) ?? []).length} tasks · {(planner.effective.get(todayKey) ?? []).reduce((sum, task) => sum + task.minutes, 0)} minutes</h2></div><button className="inline-calendar-button" onClick={() => { setSelectedDate(todayKey); setCalendarMonth(todayKey.slice(0, 7)); setView("calendar"); }}>Open full calendar →</button></div>
-              <div className="today-checklist">{(planner.effective.get(todayKey) ?? []).map((task) => { const checked = Boolean(settings[`planner.done.${task.id}`]); return <label className={`planner-task ${subjectClass(task.topic.subject)} ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><small>{task.topic.subject} · {task.minutes} min{task.carriedForward ? " · carried forward" : ""}</small><strong>{task.topic.code} · {task.topic.title}</strong></span><button type="button" onClick={() => { revealTopic(task.topic); setView("syllabus"); }}>Study</button></label>; })}{!(planner.effective.get(todayKey) ?? []).length && <EmptyMessage>Today&apos;s work is complete. Well done—take the win and return tomorrow.</EmptyMessage>}</div>
+              <div className="today-checklist">{(planner.effective.get(todayKey) ?? []).map((task) => { const checked = Boolean(settings[`planner.done.${task.id}`]); return <label className={`planner-task ${subjectClass(task.topic.subject)} ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><small>{task.topic.subject} · {task.minutes} min{task.carriedForward ? " · carried forward" : ""}</small><strong>{task.lesson.title}</strong><small>{task.lesson.objective}</small></span><button type="button" onClick={() => { revealTopic(task.topic); setView("syllabus"); }}>Study</button></label>; })}{!(planner.effective.get(todayKey) ?? []).length && <EmptyMessage>Today&apos;s work is complete. Well done—take the win and return tomorrow.</EmptyMessage>}</div>
             </section>
           </>
         )}
@@ -896,7 +935,7 @@ export default function StudyDashboard({
                 {STUDY_STREAMS.map((stream) => {
                   const subjectTasks = selectedPlannerTasks.filter((task) => task.stream === stream.name);
                   if (!subjectTasks.length) return null;
-                  return <div className="subject-task-group" key={stream.name}><h3><i style={{ background: stream.color }} />{stream.name}<span>{subjectTasks.reduce((sum, task) => sum + task.minutes, 0)} min</span></h3>{subjectTasks.map((task) => { const checked = Boolean(settings[`planner.done.${task.id}`]); return <label className={`planner-task ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><strong>{task.topic.code} · {task.topic.title}</strong><small>{task.kind === "past-paper" ? (task.topic.code === "PAST PAPER" ? "Past-paper marathon" : "Topical exam practice") : `Session ${task.session}/${task.sessions} · topic estimate ${Math.round(task.topic.minutes / 60 * 10) / 10}h`} · today {task.minutes} min{task.carriedForward ? ` · moved from ${fullDateLabel(task.originalDate)}` : ""}</small></span><button type="button" onClick={() => { revealTopic(task.topic); setView(task.kind === "past-paper" ? "tests" : "syllabus"); }}>{task.kind === "past-paper" ? "Record" : "Open"}</button></label>; })}</div>;
+                  return <div className="subject-task-group" key={stream.name}><h3><i style={{ background: stream.color }} />{stream.name}<span>{subjectTasks.reduce((sum, task) => sum + task.minutes, 0)} min</span></h3>{subjectTasks.map((task) => { const checked = Boolean(settings[`planner.done.${task.id}`]); return <label className={`planner-task ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><strong>{task.lesson.title}</strong><small>{task.kind === "revision" ? "Sunday consolidation" : task.kind === "past-paper" ? (task.topic.code === "PAST PAPER" ? "Past-paper marathon" : "Topical exam practice") : `${task.topic.code} · daily lesson`} · today {task.minutes} min{task.carriedForward ? ` · moved from ${fullDateLabel(task.originalDate)}` : ""}</small><small><b>Goal:</b> {task.lesson.objective}</small><small><b>Method:</b> {task.lesson.studyMethod}</small><small><b>Practice:</b> {task.lesson.practice}</small><small><b>Recall:</b> {task.lesson.recall}</small></span><button type="button" onClick={() => { revealTopic(task.topic); setView(task.kind === "past-paper" ? "tests" : "syllabus"); }}>{task.kind === "past-paper" ? "Record" : "Open"}</button></label>; })}</div>;
                 })}
                 {!selectedPlannerTasks.length && <EmptyMessage>{isStudyDate(selectedDate, studyDays) ? "No task is assigned on this date." : "Rest and consolidation day. Missed work will move to the next available study day."}</EmptyMessage>}
               </div>
