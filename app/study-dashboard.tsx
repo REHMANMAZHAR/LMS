@@ -78,6 +78,8 @@ type RoadmapSubject = {
 type PlannerTask = {
   id: string;
   topic: Topic;
+  stream: StudyStream;
+  kind: "syllabus" | "past-paper";
   session: number;
   sessions: number;
   minutes: number;
@@ -85,6 +87,21 @@ type PlannerTask = {
   scheduledDate: string;
   carriedForward: boolean;
 };
+
+type StudyStream = "Mathematics" | "Chemistry" | "Islamiyat" | "Pakistan History" | "Pakistan Geography";
+
+const STUDY_STREAMS: Array<{ name: StudyStream; color: string }> = [
+  { name: "Mathematics", color: SUBJECT_META.Mathematics.color },
+  { name: "Chemistry", color: SUBJECT_META.Chemistry.color },
+  { name: "Islamiyat", color: SUBJECT_META.Islamiyat.color },
+  { name: "Pakistan History", color: "#a1653c" },
+  { name: "Pakistan Geography", color: "#c08a42" },
+];
+
+function topicStream(topic: Topic): StudyStream {
+  if (topic.subject !== "Pakistan Studies") return topic.subject;
+  return topic.paper === "P2" ? "Pakistan Geography" : "Pakistan History";
+}
 
 const DEFAULT_SETTINGS: Record<string, string> = {
   targetDate: "2027-02-15",
@@ -192,42 +209,54 @@ function buildPlanner(
   const dailyCapacity = Math.max(30, Number(settings.dailyMinutes || 120));
   const studyDays = Math.max(1, Number(settings.studyDays || 6));
   const startDate = settings.plannerStartDate || today;
-  const subjectQueues = SUBJECTS.map((plannerSubject) => {
+  const streamMinutes = STUDY_STREAMS.map((_, index) => Math.floor(dailyCapacity / STUDY_STREAMS.length) + (index < dailyCapacity % STUDY_STREAMS.length ? 1 : 0));
+  const streamQueues = STUDY_STREAMS.map((stream, streamIndex) => {
     const queue: Omit<PlannerTask, "originalDate" | "scheduledDate" | "carriedForward">[] = [];
-    TOPICS.filter((topic) => topic.subject === plannerSubject).forEach((topic) => {
-      const sessions = Math.max(1, Math.ceil(topic.minutes / 45));
+    const minutesPerSession = streamMinutes[streamIndex];
+    TOPICS.filter((topic) => topicStream(topic) === stream.name).forEach((topic) => {
+      const sessions = Math.max(1, Math.ceil(topic.minutes / minutesPerSession));
       for (let session = 1; session <= sessions; session += 1) {
         queue.push({
           id: `${topic.id}:${session}`,
           topic,
+          stream: stream.name,
+          kind: "syllabus",
           session,
           sessions,
-          minutes: session === sessions ? Math.max(15, topic.minutes - 45 * (sessions - 1)) : 45,
+          minutes: minutesPerSession,
         });
       }
     });
     return queue;
   });
-  const ordered: Array<Omit<PlannerTask, "originalDate" | "scheduledDate" | "carriedForward">> = [];
-  while (subjectQueues.some((queue) => queue.length)) {
-    subjectQueues.forEach((queue) => {
-      const next = queue.shift();
-      if (next) ordered.push(next);
-    });
-  }
   const canonical = new Map<string, PlannerTask[]>();
   let date = startDate;
-  let used = 0;
-  ordered.forEach((task) => {
-    while (!isStudyDate(date, studyDays) || (used > 0 && used + task.minutes > dailyCapacity)) {
-      date = moveDate(date, 1);
-      used = 0;
+  let practiceDay = 0;
+  const examDate = settings.examDate || "2027-05-01";
+  while (date <= examDate) {
+    if (isStudyDate(date, studyDays)) {
+      const dayTasks = STUDY_STREAMS.map((stream, streamIndex) => {
+        const syllabusTask = streamQueues[streamIndex].shift();
+        if (syllabusTask) return syllabusTask;
+        const topics = TOPICS.filter((topic) => topicStream(topic) === stream.name);
+        const topic = topics[practiceDay % topics.length];
+        const paperCycle: Record<StudyStream, string[]> = {
+          Mathematics: ["Paper 2 non-calculator", "Paper 4 calculator"],
+          Chemistry: ["Paper 2 MCQ", "Paper 4 theory", "Paper 6 practical"],
+          Islamiyat: ["Paper 1 structured answers", "Paper 2 structured answers"],
+          "Pakistan History": ["Paper 1 source and judgement practice"],
+          "Pakistan Geography": ["Paper 2 data and case-study practice"],
+        };
+        const label = paperCycle[stream.name][practiceDay % paperCycle[stream.name].length];
+        return { id: `past:${stream.name}:${date}`, topic: { ...topic, code: "PAST PAPER", title: label }, stream: stream.name, kind: "past-paper" as const, session: 1, sessions: 1, minutes: streamMinutes[streamIndex] };
+      });
+      canonical.set(date, dayTasks.map((task) => ({ ...task, originalDate: date, scheduledDate: date, carriedForward: false })));
+      practiceDay += 1;
     }
-    const planned = { ...task, originalDate: date, scheduledDate: date, carriedForward: false };
-    canonical.set(date, [...(canonical.get(date) ?? []), planned]);
-    used += task.minutes;
-  });
+    date = moveDate(date, 1);
+  }
   const logicalCompletion = (task: PlannerTask) => {
+    if (task.kind === "past-paper") return false;
     const stage = progressMap.get(task.topic.id)?.stage ?? 0;
     const completedShare = [0, .45, .75, 1][stage] ?? 0;
     return task.session <= Math.floor(task.sessions * completedShare);
@@ -264,7 +293,7 @@ function buildPlanner(
     canonical,
     effective,
     tasksById,
-    predictedCompletion: [...effective.keys()].sort().at(-1) ?? today,
+    predictedCompletion: [...effective.entries()].flatMap(([key, tasks]) => tasks.some((task) => task.kind === "syllabus") ? [key] : []).sort().at(-1) ?? today,
     overdueCount: incomplete.filter((task) => task.originalDate < today).length,
   };
 }
@@ -435,6 +464,12 @@ export default function StudyDashboard({
     () => buildPlanner(progressMap, settings, todayKey),
     [progressMap, settings, todayKey],
   );
+  const streamProgress = useMemo(() => STUDY_STREAMS.map((stream) => {
+    const topics = TOPICS.filter((topic) => topicStream(topic) === stream.name);
+    const total = topics.reduce((sum, topic) => sum + topic.minutes, 0);
+    const completed = topics.reduce((sum, topic) => sum + topic.minutes * ([0, .45, .75, 1][progressMap.get(topic.id)?.stage ?? 0] ?? 0), 0);
+    return { ...stream, percent: total ? Math.round(completed / total * 100) : 0 };
+  }), [progressMap]);
   const selectedPlannerTasks = selectedDate < todayKey
     ? (planner.canonical.get(selectedDate) ?? [])
     : (planner.effective.get(selectedDate) ?? []);
@@ -646,13 +681,13 @@ export default function StudyDashboard({
   async function togglePlannerTask(task: PlannerTask, checked: boolean) {
     const key = `planner.done.${task.id}`;
     const previousValue = familyState.settings[key] ?? "";
-    const completedDate = checked ? localDateKey() : "";
+    const completedDate = checked ? task.scheduledDate : "";
     setFamilyState((current) => ({ ...current, settings: { ...current.settings, [key]: completedDate } }));
     setSaving(true);
     try {
       await sendUpdate({ action: "planner", taskId: task.id, topicId: task.topic.id, subject: task.topic.subject, checked, completedDate, minutes: task.minutes });
       setMessage(checked ? "Task completed. The remaining calendar has been recalculated." : "Task reopened. Future dates have been updated.");
-      if (checked) {
+      if (checked && task.kind === "syllabus") {
         const topicTasks = [...planner.tasksById.values()].filter((candidate) => candidate.topic.id === task.topic.id);
         const allDone = topicTasks.every((candidate) => candidate.id === task.id || Boolean(settings[`planner.done.${candidate.id}`]));
         if (allDone && (progressMap.get(task.topic.id)?.stage ?? 0) === 0) await updateStage(task.topic, 1);
@@ -832,6 +867,10 @@ export default function StudyDashboard({
               <div><span className="eyebrow">LIVING STUDY PLAN</span><h2>{planner.overdueCount ? `${planner.overdueCount} missed task${planner.overdueCount === 1 ? "" : "s"} safely carried forward` : "The schedule is up to date"}</h2><p>Checking or unchecking a task immediately recalculates future dates without exceeding the daily study-time limit.</p></div>
               <div className="timeline-status"><span>Predicted syllabus completion</span><strong>{fullDateLabel(planner.predictedCompletion)}</strong><small>{planner.predictedCompletion <= settings.targetDate ? "Within the current target" : "Later than the current target - adjust time or study days"}</small></div>
             </div>
+            <div className="syllabus-bars panel">
+              <div className="section-heading"><div><span className="eyebrow">SYLLABUS PROGRESS</span><h2>Completed and remaining</h2></div><strong>{stats.coverage}% overall</strong></div>
+              <div className="stream-bars">{streamProgress.map((stream) => <div className="stream-progress" key={stream.name}><span><b>{stream.name}</b><small>{stream.percent}% complete · {100 - stream.percent}% remaining</small></span><div className="progress-track" aria-label={`${stream.name}: ${stream.percent}% complete`}><i style={{ width: `${stream.percent}%`, background: stream.color }} /></div></div>)}</div>
+            </div>
             <div className="calendar-main">
               <div className="month-calendar panel">
                 <div className="month-nav"><button onClick={() => { const date = dateFromKey(`${calendarMonth}-01`); date.setMonth(date.getMonth() - 1); setCalendarMonth(localDateKey(date).slice(0, 7)); }}>←</button><h2>{new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" }).format(dateFromKey(`${calendarMonth}-01`))}</h2><button onClick={() => { const date = dateFromKey(`${calendarMonth}-01`); date.setMonth(date.getMonth() + 1); setCalendarMonth(localDateKey(date).slice(0, 7)); }}>→</button></div>
@@ -846,10 +885,10 @@ export default function StudyDashboard({
               </div>
               <div className="date-tasks panel">
                 <div className="section-heading"><div><span className="eyebrow">ASSIGNED TASKS</span><h2>{fullDateLabel(selectedDate)}</h2></div><strong>{selectedPlannerTasks.reduce((sum, task) => sum + task.minutes, 0)} min</strong></div>
-                {SUBJECTS.map((plannerSubject) => {
-                  const subjectTasks = selectedPlannerTasks.filter((task) => task.topic.subject === plannerSubject);
+                {STUDY_STREAMS.map((stream) => {
+                  const subjectTasks = selectedPlannerTasks.filter((task) => task.stream === stream.name);
                   if (!subjectTasks.length) return null;
-                  return <div className={`subject-task-group ${subjectClass(plannerSubject)}`} key={plannerSubject}><h3><i style={{ background: SUBJECT_META[plannerSubject].color }} />{plannerSubject}<span>{subjectTasks.reduce((sum, task) => sum + task.minutes, 0)} min</span></h3>{subjectTasks.map((task) => { const checked = Boolean(settings[`planner.done.${task.id}`]); return <label className={`planner-task ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><strong>{task.topic.code} · {task.topic.title}</strong><small>Session {task.session}/{task.sessions} · {task.minutes} min{task.carriedForward ? ` · moved from ${fullDateLabel(task.originalDate)}` : ""}</small></span><button type="button" onClick={() => { revealTopic(task.topic); setView("syllabus"); }}>Open</button></label>; })}</div>;
+                  return <div className="subject-task-group" key={stream.name}><h3><i style={{ background: stream.color }} />{stream.name}<span>{subjectTasks.reduce((sum, task) => sum + task.minutes, 0)} min</span></h3>{subjectTasks.map((task) => { const checked = Boolean(settings[`planner.done.${task.id}`]); return <label className={`planner-task ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><strong>{task.topic.code} · {task.topic.title}</strong><small>{task.kind === "past-paper" ? "Past-paper phase" : `Session ${task.session}/${task.sessions}`} · {task.minutes} min{task.carriedForward ? ` · moved from ${fullDateLabel(task.originalDate)}` : ""}</small></span><button type="button" onClick={() => { revealTopic(task.topic); setView(task.kind === "past-paper" ? "tests" : "syllabus"); }}>{task.kind === "past-paper" ? "Record" : "Open"}</button></label>; })}</div>;
                 })}
                 {!selectedPlannerTasks.length && <EmptyMessage>{isStudyDate(selectedDate, studyDays) ? "No task is assigned on this date." : "Rest and consolidation day. Missed work will move to the next available study day."}</EmptyMessage>}
               </div>
