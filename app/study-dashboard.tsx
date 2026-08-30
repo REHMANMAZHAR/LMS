@@ -309,7 +309,7 @@ function buildPlanner(
   const repeatedTopics = new Set<string>();
   STUDY_STREAMS.forEach((stream) => {
     const queue = incomplete.filter((task) => task.stream === stream.name).sort((a, b) => a.originalDate.localeCompare(b.originalDate));
-    let effectiveDate = today;
+    let effectiveDate = today < startDate ? startDate : today;
     queue.forEach((task) => {
       const repeatDate = settings[`planner.repeat.${task.topic.id}`];
       if (repeatDate && repeatDate >= today && !repeatedTopics.has(task.topic.id)) {
@@ -383,6 +383,8 @@ export default function StudyDashboard({
   const [testError, setTestError] = useState<ErrorCategory>("Knowledge gap");
   const [testNote, setTestNote] = useState("");
   const [, setStuckTopicId] = useState<string | null>(null);
+  const [repeatPickerTopicId, setRepeatPickerTopicId] = useState<string | null>(null);
+  const [repeatDateChoice, setRepeatDateChoice] = useState(() => moveDate(localDateKey(), 1));
   const [selectedDate, setSelectedDate] = useState(localDateKey());
   const [calendarMonth, setCalendarMonth] = useState(() => localDateKey().slice(0, 7));
 
@@ -773,14 +775,35 @@ export default function StudyDashboard({
     setMessage(`Opening a lesson for ${topic.title}. Return afterwards for easier guided practice.`);
   }
 
+  function showFullPath(topic: Topic) {
+    setChosenTopicId(topic.id);
+    window.setTimeout(() => document.getElementById("learning-path")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+
+  function openRepeatPicker(topic: Topic) {
+    let suggested = settings[`planner.repeat.${topic.id}`] || moveDate(localDateKey(), 1);
+    while (!isStudyDate(suggested, studyDays)) suggested = moveDate(suggested, 1);
+    setRepeatDateChoice(suggested);
+    setRepeatPickerTopicId(topic.id);
+  }
+
   async function repeatTopicLater(topic: Topic) {
-    let repeatDate = moveDate(localDateKey(), 1);
-    while (!isStudyDate(repeatDate, studyDays)) repeatDate = moveDate(repeatDate, 1);
-    await saveSetting(`planner.repeat.${topic.id}`, repeatDate);
-    setSelectedDate(repeatDate);
-    setCalendarMonth(repeatDate.slice(0, 7));
+    if (!repeatDateChoice || repeatDateChoice <= localDateKey()) {
+      setMessage("Choose a future study date.");
+      return;
+    }
+    await saveSetting(`planner.repeat.${topic.id}`, repeatDateChoice);
+    setRepeatPickerTopicId(null);
+    setSelectedDate(repeatDateChoice);
+    setCalendarMonth(repeatDateChoice.slice(0, 7));
     setView("calendar");
-    setMessage(`${topic.title} has been moved to ${fullDateLabel(repeatDate)}.`);
+    setMessage(`${topic.title} will repeat on ${fullDateLabel(repeatDateChoice)}. Use Undo repeat in Lesson help if this was accidental.`);
+  }
+
+  async function undoRepeat(topic: Topic) {
+    await saveSetting(`planner.repeat.${topic.id}`, "");
+    setRepeatPickerTopicId(null);
+    setMessage(`The scheduled repeat for ${topic.title} has been removed and the calendar recalculated.`);
   }
 
   async function recordTest(event: FormEvent) {
@@ -954,7 +977,7 @@ export default function StudyDashboard({
         {view === "syllabus" && (
           <section className="section-block no-top">
 
-            <div className="topic-chooser panel">
+            <div className="topic-chooser panel" id="learning-path">
               <div className="topic-chooser-head">
                 <div><span className="eyebrow">CHOOSE WHAT TO STUDY</span><h2>Check the learning path first</h2><p>Select any topic. The system shows the foundations Talha has already studied, anything still missing, and the topics that build on it.</p></div>
                 <label><span>Topic</span><select value={chosenTopicId} onChange={(event) => setChosenTopicId(event.target.value)}>{SUBJECTS.map((item) => <optgroup key={item} label={item}>{TOPICS.filter((topic) => topic.subject === item).map((topic) => <option key={topic.id} value={topic.id}>{topic.code} · {topic.title}</option>)}</optgroup>)}</select></label>
@@ -981,7 +1004,7 @@ export default function StudyDashboard({
                 const workloadShare = ((topic.minutes / subjectMinutes) * 100).toFixed(1);
                 const sessions = Math.max(1, Math.ceil(topic.minutes / 45));
                 const guidance = effortGuidance(item?.bestScore ?? 0, tests.find((attempt) => attempt.topicId === topic.id)?.errorCategory);
-                return <article className="topic-row" key={topic.id}><button className={`stage-button ${stageClass(topicStage)}`} onClick={() => updateStage(topic, topicStage === 3 ? 3 : topicStage + 1)} aria-label={`Update ${topic.title}`}><span>{topicStage === 0 ? "" : topicStage === 3 ? "★" : "✓"}</span></button><div className="topic-main"><div className="topic-kicker"><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><span>{topic.code}</span><span>{topic.unit}</span></div><h3>{topic.title}</h3><div className="topic-meta"><span>{importanceLabel(topic.importance)} exam priority</span><span>{topic.paper}</span><span>{Math.ceil(topic.minutes / 60 * 10) / 10}h · {sessions} session{sessions === 1 ? "" : "s"}</span><span>{workloadShare}% of subject workload</span><span>{topicStage ? guidance.effort : "Not started"}</span>{hasReviewedQuiz(topic.id) && <span>Reviewed quiz ready</span>}</div>{open && <div className="topic-detail"><div><strong>How to complete it</strong><p>Learn the key idea, work through an example, practise independently, correct errors, then return for a recall check.</p></div><div><strong>What matters in the exam</strong><p>{topic.tip}</p></div><div className="topic-links"><strong>Linked learning path</strong>{prerequisiteTopics(topic.id).length ? <p>Builds on: {prerequisiteTopics(topic.id).map((linked) => linked.title).join(" · ")}</p> : <p>No earlier foundation required.</p>}{linkedNextTopics(topic.id).length > 0 && <p>Leads to: {linkedNextTopics(topic.id).map((linked) => linked.title).join(" · ")}</p>}<button onClick={() => setChosenTopicId(topic.id)}>Show full path above</button></div><div className="stuck-box"><strong>Finding this difficult?</strong><p>Choose the help that matches the problem.</p><div><button onClick={() => openPrerequisiteHelp(topic)}>I forgot an earlier idea</button><button onClick={() => openPracticeHelp(topic)}>I cannot solve questions</button><button onClick={() => void repeatTopicLater(topic)}>Repeat this later</button></div></div><a href={youtubeSearchUrl(topic)} target="_blank" rel="noreferrer">Watch a selected topic lesson ↗</a></div>}</div><div className="topic-actions"><span className={`status-pill ${stageClass(topicStage)}`}>{STAGES[topicStage]}</span>{hasReviewedQuiz(topic.id) && topicStage > 0 && <button className="quiz-row-button" onClick={() => openQuiz(topic)}>Quiz</button>}{topicStage > 0 && <button onClick={() => updateStage(topic, 0)} aria-label={`Reset ${topic.title} to Not started`}>Reset</button>}<button onClick={() => { setExpanded(open ? null : topic.id); setStuckTopicId(open ? null : topic.id); }}>{open ? "Close" : "Lesson help"}</button></div></article>;
+                return <article className="topic-row" key={topic.id}><button className={`stage-button ${stageClass(topicStage)}`} onClick={() => updateStage(topic, topicStage === 3 ? 3 : topicStage + 1)} aria-label={`Update ${topic.title}`}><span>{topicStage === 0 ? "" : topicStage === 3 ? "★" : "✓"}</span></button><div className="topic-main"><div className="topic-kicker"><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><span>{topic.code}</span><span>{topic.unit}</span></div><h3>{topic.title}</h3><div className="topic-meta"><span>{importanceLabel(topic.importance)} exam priority</span><span>{topic.paper}</span><span>{Math.ceil(topic.minutes / 60 * 10) / 10}h · {sessions} session{sessions === 1 ? "" : "s"}</span><span>{workloadShare}% of subject workload</span><span>{topicStage ? guidance.effort : "Not started"}</span>{hasReviewedQuiz(topic.id) && <span>Reviewed quiz ready</span>}</div>{open && <div className="topic-detail"><div><strong>How to complete it</strong><p>Learn the key idea, work through an example, practise independently, correct errors, then return for a recall check.</p></div><div><strong>What matters in the exam</strong><p>{topic.tip}</p></div><div className="topic-links"><strong>Linked learning path</strong>{prerequisiteTopics(topic.id).length ? <p>Builds on: {prerequisiteTopics(topic.id).map((linked) => linked.title).join(" · ")}</p> : <p>No earlier foundation required.</p>}{linkedNextTopics(topic.id).length > 0 && <p>Leads to: {linkedNextTopics(topic.id).map((linked) => linked.title).join(" · ")}</p>}<button onClick={() => showFullPath(topic)}>Show full path above</button></div><div className="stuck-box"><strong>Finding this difficult?</strong><p>Choose the help that matches the problem.</p><div><button onClick={() => openPrerequisiteHelp(topic)}>I forgot an earlier idea</button><button onClick={() => openPracticeHelp(topic)}>I cannot solve questions</button><button onClick={() => openRepeatPicker(topic)}>Repeat this later</button></div>{repeatPickerTopicId === topic.id && <div className="repeat-scheduler"><label><span>Choose the repeat date</span><input type="date" min={moveDate(localDateKey(), 1)} value={repeatDateChoice} onChange={(event) => setRepeatDateChoice(event.target.value)} /></label><button onClick={() => void repeatTopicLater(topic)}>Confirm date</button><button className="repeat-cancel" onClick={() => setRepeatPickerTopicId(null)}>Cancel</button></div>}{settings[`planner.repeat.${topic.id}`] && <div className="repeat-scheduled"><span>Scheduled for {fullDateLabel(settings[`planner.repeat.${topic.id}`])}</span><button onClick={() => void undoRepeat(topic)}>Undo repeat</button></div>}</div><a href={youtubeSearchUrl(topic)} target="_blank" rel="noreferrer">Watch a selected topic lesson ↗</a></div>}</div><div className="topic-actions"><span className={`status-pill ${stageClass(topicStage)}`}>{STAGES[topicStage]}</span>{hasReviewedQuiz(topic.id) && topicStage > 0 && <button className="quiz-row-button" onClick={() => openQuiz(topic)}>Quiz</button>}{topicStage > 0 && <button onClick={() => updateStage(topic, 0)} aria-label={`Reset ${topic.title} to Not started`}>Reset</button>}<button onClick={() => { setExpanded(open ? null : topic.id); setStuckTopicId(open ? null : topic.id); }}>{open ? "Close" : "Lesson help"}</button></div></article>;
               })}
               {filteredTopics.length === 0 && <EmptyMessage>No topics match these filters.</EmptyMessage>}
             </div>
