@@ -309,7 +309,10 @@ function buildPlanner(
   const repeatedTopics = new Set<string>();
   STUDY_STREAMS.forEach((stream) => {
     const queue = incomplete.filter((task) => task.stream === stream.name).sort((a, b) => a.originalDate.localeCompare(b.originalDate));
-    let effectiveDate = today < startDate ? startDate : today;
+    const streamFinishedToday = [...canonical.values()]
+      .flat()
+      .some((task) => task.stream === stream.name && doneDate(task.id) === today);
+    let effectiveDate = today < startDate ? startDate : streamFinishedToday ? moveDate(today, 1) : today;
     queue.forEach((task) => {
       const repeatDate = settings[`planner.repeat.${task.topic.id}`];
       if (repeatDate && repeatDate >= today && !repeatedTopics.has(task.topic.id)) {
