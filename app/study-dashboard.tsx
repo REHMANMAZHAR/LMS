@@ -297,21 +297,32 @@ function buildPlanner(
     }
     date = moveDate(date, 1);
   }
+  const canonicalTasks = [...canonical.values()].flat();
+  const rawDoneDate = (taskId: string) => settings[`planner.done.${taskId}`] || "";
+  // A study day has exactly one slot for each stream. Older builds could pull the
+  // next lesson into the same slot after a checkbox was ticked, so keep only the
+  // first canonical completion for each stream/date and return extras to the queue.
+  const completedBySlot = new Map<string, string>();
+  canonicalTasks.forEach((task) => {
+    const completedOn = rawDoneDate(task.id);
+    if (!completedOn) return;
+    const slot = `${completedOn}:${task.stream}`;
+    if (!completedBySlot.has(slot)) completedBySlot.set(slot, task.id);
+  });
+  const completedTaskIds = new Set(completedBySlot.values());
+  const doneDate = (taskId: string) => completedTaskIds.has(taskId) ? rawDoneDate(taskId) : "";
   const logicalCompletion = (task: PlannerTask) => {
     if (task.kind !== "syllabus") return false;
     const stage = progressMap.get(task.topic.id)?.stage ?? 0;
     const completedShare = [0, .45, .75, 1][stage] ?? 0;
     return task.session <= Math.floor(task.sessions * completedShare);
   };
-  const doneDate = (taskId: string) => settings[`planner.done.${taskId}`] || "";
-  const incomplete = [...canonical.values()].flat().filter((task) => !doneDate(task.id) && !logicalCompletion(task));
+  const incomplete = canonicalTasks.filter((task) => !doneDate(task.id) && !logicalCompletion(task));
   const effective = new Map<string, PlannerTask[]>();
   const repeatedTopics = new Set<string>();
   STUDY_STREAMS.forEach((stream) => {
     const queue = incomplete.filter((task) => task.stream === stream.name).sort((a, b) => a.originalDate.localeCompare(b.originalDate));
-    const streamFinishedToday = [...canonical.values()]
-      .flat()
-      .some((task) => task.stream === stream.name && doneDate(task.id) === today);
+    const streamFinishedToday = canonicalTasks.some((task) => task.stream === stream.name && doneDate(task.id) === today);
     let effectiveDate = today < startDate ? startDate : streamFinishedToday ? moveDate(today, 1) : today;
     queue.forEach((task) => {
       const repeatDate = settings[`planner.repeat.${task.topic.id}`];
@@ -327,7 +338,7 @@ function buildPlanner(
       effectiveDate = moveDate(effectiveDate, 1);
     });
   });
-  [...canonical.values()].flat().forEach((task) => {
+  canonicalTasks.forEach((task) => {
     const completedOn = doneDate(task.id);
     if (completedOn) effective.set(completedOn, [...(effective.get(completedOn) ?? []), { ...task, scheduledDate: completedOn, carriedForward: false }]);
   });
@@ -336,6 +347,7 @@ function buildPlanner(
     canonical,
     effective,
     tasksById,
+    completedTaskIds,
     predictedCompletion: [...effective.entries()].flatMap(([key, tasks]) => tasks.some((task) => task.kind === "syllabus") ? [key] : []).sort().at(-1) ?? today,
     overdueCount: incomplete.filter((task) => task.originalDate < today).length,
   };
@@ -748,7 +760,7 @@ export default function StudyDashboard({
       setMessage(checked ? "Task completed. The remaining calendar has been recalculated." : "Task reopened. Future dates have been updated.");
       if (checked && task.kind === "syllabus") {
         const topicTasks = [...planner.tasksById.values()].filter((candidate) => candidate.topic.id === task.topic.id);
-        const allDone = topicTasks.every((candidate) => candidate.id === task.id || Boolean(settings[`planner.done.${candidate.id}`]));
+        const allDone = topicTasks.every((candidate) => candidate.id === task.id || planner.completedTaskIds.has(candidate.id));
         if (allDone && (progressMap.get(task.topic.id)?.stage ?? 0) === 0) await updateStage(task.topic, 1);
       }
     } catch (error) {
@@ -936,7 +948,7 @@ export default function StudyDashboard({
             </section>
             <section className="section-block">
               <div className="section-heading"><div><span className="eyebrow">TODAY&apos;S CHECKLIST</span><h2>{(planner.effective.get(todayKey) ?? []).length} tasks · {(planner.effective.get(todayKey) ?? []).reduce((sum, task) => sum + task.minutes, 0)} minutes</h2></div><button className="inline-calendar-button" onClick={() => { setSelectedDate(todayKey); setCalendarMonth(todayKey.slice(0, 7)); setView("calendar"); }}>Open full calendar →</button></div>
-              <div className="today-checklist">{(planner.effective.get(todayKey) ?? []).map((task) => { const checked = Boolean(settings[`planner.done.${task.id}`]); return <label className={`planner-task ${subjectClass(task.topic.subject)} ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><small>{task.topic.subject} · {task.minutes} min{task.carriedForward ? " · carried forward" : ""}</small><strong>{task.lesson.title}</strong><small>{task.lesson.objective}</small></span><button type="button" onClick={() => { revealTopic(task.topic); setView("syllabus"); }}>Study</button></label>; })}{!(planner.effective.get(todayKey) ?? []).length && <EmptyMessage>Today&apos;s work is complete. Well done—take the win and return tomorrow.</EmptyMessage>}</div>
+              <div className="today-checklist">{(planner.effective.get(todayKey) ?? []).map((task) => { const checked = planner.completedTaskIds.has(task.id); return <label className={`planner-task ${subjectClass(task.topic.subject)} ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><small>{task.topic.subject} · {task.minutes} min{task.carriedForward ? " · carried forward" : ""}</small><strong>{task.lesson.title}</strong><small>{task.lesson.objective}</small></span><button type="button" onClick={() => { revealTopic(task.topic); setView("syllabus"); }}>Study</button></label>; })}{!(planner.effective.get(todayKey) ?? []).length && <EmptyMessage>Today&apos;s work is complete. Well done—take the win and return tomorrow.</EmptyMessage>}</div>
             </section>
           </>
         )}
@@ -958,7 +970,7 @@ export default function StudyDashboard({
                 <div className="calendar-grid">{calendarDays.map((day, index) => {
                   if (!day) return <span className="calendar-blank" key={`blank-${index}`} />;
                   const tasks = day < todayKey ? (planner.canonical.get(day) ?? []) : (planner.effective.get(day) ?? []);
-                  const done = tasks.filter((task) => Boolean(settings[`planner.done.${task.id}`])).length;
+                  const done = tasks.filter((task) => planner.completedTaskIds.has(task.id)).length;
                   const missed = day < todayKey && tasks.some((task) => !settings[`planner.done.${task.id}`]);
                   return <button key={day} className={`${selectedDate === day ? "selected" : ""} ${day === todayKey ? "today" : ""} ${missed ? "missed" : ""}`} onClick={() => setSelectedDate(day)}><b>{Number(day.slice(-2))}</b>{tasks.length > 0 && <span>{done}/{tasks.length}</span>}</button>;
                 })}</div>
@@ -968,7 +980,7 @@ export default function StudyDashboard({
                 {STUDY_STREAMS.map((stream) => {
                   const subjectTasks = selectedPlannerTasks.filter((task) => task.stream === stream.name);
                   if (!subjectTasks.length) return null;
-                  return <div className="subject-task-group" key={stream.name}><h3><i style={{ background: stream.color }} />{stream.name}<span>{subjectTasks.reduce((sum, task) => sum + task.minutes, 0)} min</span></h3>{subjectTasks.map((task) => { const checked = Boolean(settings[`planner.done.${task.id}`]); return <label className={`planner-task ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><strong>{task.lesson.title}</strong><small>{task.kind === "revision" ? "Sunday consolidation" : task.kind === "past-paper" ? (task.topic.code === "PAST PAPER" ? "Past-paper marathon" : "Topical exam practice") : `${task.topic.code} · daily lesson`} · today {task.minutes} min{task.carriedForward ? ` · moved from ${fullDateLabel(task.originalDate)}` : ""}</small><small><b>Goal:</b> {task.lesson.objective}</small><small><b>Method:</b> {task.lesson.studyMethod}</small><small><b>Practice:</b> {task.lesson.practice}</small><small><b>Recall:</b> {task.lesson.recall}</small></span><button type="button" onClick={() => { revealTopic(task.topic); setView(task.kind === "past-paper" ? "tests" : "syllabus"); }}>{task.kind === "past-paper" ? "Record" : "Open"}</button></label>; })}</div>;
+                  return <div className="subject-task-group" key={stream.name}><h3><i style={{ background: stream.color }} />{stream.name}<span>{subjectTasks.reduce((sum, task) => sum + task.minutes, 0)} min</span></h3>{subjectTasks.map((task) => { const checked = planner.completedTaskIds.has(task.id); return <label className={`planner-task ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><strong>{task.lesson.title}</strong><small>{task.kind === "revision" ? "Sunday consolidation" : task.kind === "past-paper" ? (task.topic.code === "PAST PAPER" ? "Past-paper marathon" : "Topical exam practice") : `${task.topic.code} · daily lesson`} · today {task.minutes} min{task.carriedForward ? ` · moved from ${fullDateLabel(task.originalDate)}` : ""}</small><small><b>Goal:</b> {task.lesson.objective}</small><small><b>Method:</b> {task.lesson.studyMethod}</small><small><b>Practice:</b> {task.lesson.practice}</small><small><b>Recall:</b> {task.lesson.recall}</small></span><button type="button" onClick={() => { revealTopic(task.topic); setView(task.kind === "past-paper" ? "tests" : "syllabus"); }}>{task.kind === "past-paper" ? "Record" : "Open"}</button></label>; })}</div>;
                 })}
                 {!selectedPlannerTasks.length && <EmptyMessage>{isStudyDate(selectedDate, studyDays) ? "No task is assigned on this date." : "Rest and consolidation day. Missed work will move to the next available study day."}</EmptyMessage>}
               </div>
