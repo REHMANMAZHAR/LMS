@@ -105,3 +105,7 @@ GitHub protects the application source and its full change history. Study data
 is stored separately in D1. Open **Parent view → Download progress backup** to
 save a dated JSON copy of Talha's progress, assessment evidence and settings.
 The v3 backup also includes detailed built-in quiz attempts and corrections.
+
+## Production deployment
+
+Cloudflare Workers Builds is connected to this repository. The production Worker builds and deploys from the `main` branch; feature branches create non-production versions for review.
