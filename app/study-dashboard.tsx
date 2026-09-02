@@ -26,6 +26,9 @@ import {
 } from "./learning-model";
 import QuizView from "./quiz-view";
 import { REVIEWED_QUIZ_TOPIC_IDS, hasReviewedQuiz, type QuizResultPayload } from "./quiz-model";
+import DailyQuizView from "./daily-quiz-view";
+import { hasDailyQuiz } from "./daily-quiz-bank";
+import type { DailyQuizResultPayload } from "./daily-quiz-model";
 import { STARTER_LESSONS, sundayLesson, topicLesson, topicLessonCount, type GuidedLesson } from "./lesson-plan";
 
 type View = "today" | "calendar" | "syllabus" | "quizzes" | "tests" | "plan" | "parent";
@@ -386,6 +389,7 @@ export default function StudyDashboard({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [chosenTopicId, setChosenTopicId] = useState<string>(TOPICS[0].id);
   const [quizTopicId, setQuizTopicId] = useState<string>(REVIEWED_QUIZ_TOPIC_IDS[0]);
+  const [dailyQuizTaskId, setDailyQuizTaskId] = useState<string | null>(null);
   const [testTopicId, setTestTopicId] = useState(
     TOPICS.find((topic) => topic.subject === "Mathematics")?.id ?? TOPICS[0].id,
   );
@@ -670,6 +674,11 @@ export default function StudyDashboard({
     } else {
       setMessage(`${guidance.effort}: ${guidance.next}`);
     }
+  }
+
+  async function handleDailyQuizCompleted(result: DailyQuizResultPayload) {
+    await loadFamilyState(false);
+    setMessage(`${result.outcome}: ${result.guidance}`);
   }
 
   async function updateStage(topic: Topic, requestedStage: number) {
@@ -957,7 +966,7 @@ export default function StudyDashboard({
             </section>
             <section className="section-block">
               <div className="section-heading"><div><span className="eyebrow">TODAY&apos;S CHECKLIST</span><h2>{todayRemainingTasks.length} task{todayRemainingTasks.length === 1 ? "" : "s"} left · {todayRemainingMinutes} minutes remaining</h2><small className="today-progress-note">{todayCompletedCount} of {todayTasks.length} completed today</small></div><button className="inline-calendar-button" onClick={() => { setSelectedDate(todayKey); setCalendarMonth(todayKey.slice(0, 7)); setView("calendar"); }}>Open full calendar →</button></div>
-              <div className="today-checklist">{todayTasks.map((task) => { const checked = planner.completedTaskIds.has(task.id); return <label className={`planner-task ${subjectClass(task.topic.subject)} ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><small>{task.topic.subject} · {task.minutes} min{task.carriedForward ? " · carried forward" : ""}</small><strong>{task.lesson.title}</strong><small>{task.lesson.objective}</small></span><button type="button" onClick={() => { revealTopic(task.topic); setView("syllabus"); }}>Study</button></label>; })}{!todayTasks.length && <EmptyMessage>No study tasks are scheduled for today.</EmptyMessage>}</div>
+              <div className="today-checklist">{todayTasks.map((task) => { const checked = planner.completedTaskIds.has(task.id); return <label className={`planner-task ${subjectClass(task.topic.subject)} ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><small>{task.stream} · {task.minutes} min{task.carriedForward ? " · carried forward" : ""}</small><strong>{task.lesson.title}</strong><small>{task.lesson.objective}</small></span><span className="planner-task-actions">{hasDailyQuiz(task.id) && <button type="button" className="daily-check-button" onClick={() => setDailyQuizTaskId(task.id)}>Daily check</button>}<button type="button" onClick={() => { revealTopic(task.topic); setView("syllabus"); }}>Study</button></span></label>; })}{!todayTasks.length && <EmptyMessage>No study tasks are scheduled for today.</EmptyMessage>}</div>
             </section>
           </>
         )}
@@ -989,7 +998,7 @@ export default function StudyDashboard({
                 {STUDY_STREAMS.map((stream) => {
                   const subjectTasks = selectedPlannerTasks.filter((task) => task.stream === stream.name);
                   if (!subjectTasks.length) return null;
-                  return <div className="subject-task-group" key={stream.name}><h3><i style={{ background: stream.color }} />{stream.name}<span>{subjectTasks.reduce((sum, task) => sum + task.minutes, 0)} min</span></h3>{subjectTasks.map((task) => { const checked = planner.completedTaskIds.has(task.id); return <label className={`planner-task ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><strong>{task.lesson.title}</strong><small>{task.kind === "revision" ? "Sunday consolidation" : task.kind === "past-paper" ? (task.topic.code === "PAST PAPER" ? "Past-paper marathon" : "Topical exam practice") : `${task.topic.code} · daily lesson`} · today {task.minutes} min{task.carriedForward ? ` · moved from ${fullDateLabel(task.originalDate)}` : ""}</small><small><b>Goal:</b> {task.lesson.objective}</small><small><b>Method:</b> {task.lesson.studyMethod}</small><small><b>Practice:</b> {task.lesson.practice}</small><small><b>Recall:</b> {task.lesson.recall}</small></span><button type="button" onClick={() => { revealTopic(task.topic); setView(task.kind === "past-paper" ? "tests" : "syllabus"); }}>{task.kind === "past-paper" ? "Record" : "Open"}</button></label>; })}</div>;
+                  return <div className="subject-task-group" key={stream.name}><h3><i style={{ background: stream.color }} />{stream.name}<span>{subjectTasks.reduce((sum, task) => sum + task.minutes, 0)} min</span></h3>{subjectTasks.map((task) => { const checked = planner.completedTaskIds.has(task.id); return <label className={`planner-task ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><strong>{task.lesson.title}</strong><small>{task.kind === "revision" ? "Sunday consolidation" : task.kind === "past-paper" ? (task.topic.code === "PAST PAPER" ? "Past-paper marathon" : "Topical exam practice") : `${task.topic.code} · daily lesson`} · today {task.minutes} min{task.carriedForward ? ` · moved from ${fullDateLabel(task.originalDate)}` : ""}</small><small><b>Goal:</b> {task.lesson.objective}</small><small><b>Method:</b> {task.lesson.studyMethod}</small><small><b>Practice:</b> {task.lesson.practice}</small><small><b>Recall:</b> {task.lesson.recall}</small></span><span className="planner-task-actions">{hasDailyQuiz(task.id) && <button type="button" className="daily-check-button" onClick={() => setDailyQuizTaskId(task.id)}>Daily check</button>}<button type="button" onClick={() => { revealTopic(task.topic); setView(task.kind === "past-paper" ? "tests" : "syllabus"); }}>{task.kind === "past-paper" ? "Record" : "Open"}</button></span></label>; })}</div>;
                 })}
                 {!selectedPlannerTasks.length && <EmptyMessage>{isStudyDate(selectedDate, studyDays) ? "No task is assigned on this date." : "Rest and consolidation day. Missed work will move to the next available study day."}</EmptyMessage>}
               </div>
@@ -1091,6 +1100,7 @@ export default function StudyDashboard({
 
         {view === "parent" && <ParentView progressMap={progressMap} activity={familyState.activity} attempts={familyState.attempts} stats={stats} settings={settings} requiredDaily={requiredDaily} />}
       </main>
+      {dailyQuizTaskId && <DailyQuizView taskId={dailyQuizTaskId} onClose={() => setDailyQuizTaskId(null)} onCompleted={handleDailyQuizCompleted} />}
     </div>
   );
 }
