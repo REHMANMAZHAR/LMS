@@ -110,7 +110,7 @@ export async function POST(request: Request) {
         feedbackJson: JSON.stringify(feedback), errorSummary: outcome, createdAt: now.toISOString(),
       }),
       db.insert(activity).values({
-        familyId: FAMILY_ID, topicId: dailyQuiz.topicId, subject, kind: "daily-check",
+        familyId: FAMILY_ID, topicId: session.topicId, subject, kind: "daily-check",
         score, maxScore, minutes: Math.max(1, Math.ceil(durationSeconds / 60)),
         note: `${dailyQuiz.stream} · ${dailyQuiz.lessonTitle}: ${outcome}. ${guidance} Submitted by ${user.displayName}.`,
         createdAt: now.toISOString(),
