@@ -535,6 +535,13 @@ export default function StudyDashboard({
     () => buildPlanner(progressMap, settings, todayKey),
     [progressMap, settings, todayKey],
   );
+  const todayTasks = planner.effective.get(todayKey) ?? [];
+  const todayRemainingTasks = todayTasks.filter((task) => !planner.completedTaskIds.has(task.id));
+  const todayRemainingMinutes = todayRemainingTasks.reduce((sum, task) => sum + task.minutes, 0);
+  const todayCompletedCount = todayTasks.length - todayRemainingTasks.length;
+  const examDaysLeft = Math.max(0, Math.ceil(
+    (dateFromKey(settings.examDate).getTime() - dateFromKey(todayKey).getTime()) / 86_400_000,
+  ));
   const streamProgress = useMemo(() => STUDY_STREAMS.map((stream) => {
     const topics = TOPICS.filter((topic) => topicStream(topic) === stream.name);
     const total = topics.reduce((sum, topic) => sum + topic.minutes, 0);
@@ -564,7 +571,8 @@ export default function StudyDashboard({
     const delay = reminder.getTime() - Date.now();
     const timer = window.setTimeout(() => {
       const tasks = planner.effective.get(localDateKey()) ?? [];
-      new Notification("Talha's study plan is ready", { body: `${tasks.length} tasks · ${tasks.reduce((sum, task) => sum + task.minutes, 0)} minutes planned.` });
+      const remaining = tasks.filter((task) => !planner.completedTaskIds.has(task.id));
+      new Notification("Talha's study plan is ready", { body: `${remaining.length} tasks left · ${remaining.reduce((sum, task) => sum + task.minutes, 0)} minutes remaining.` });
     }, Math.min(delay, 2_147_000_000));
     return () => window.clearTimeout(timer);
   }, [planner.effective, settings.reminderTime, settings.remindersEnabled]);
@@ -647,7 +655,8 @@ export default function StudyDashboard({
     setMessage(enabled ? "Study reminders are enabled on this device while browser support permits." : "Notifications were not enabled. You can still use the daily plan inside the LMS.");
     if (enabled) {
       const tasks = planner.effective.get(localDateKey()) ?? [];
-      new Notification("Talha's study plan is ready", { body: `${tasks.length} tasks · ${tasks.reduce((sum, task) => sum + task.minutes, 0)} minutes planned.` });
+      const remaining = tasks.filter((task) => !planner.completedTaskIds.has(task.id));
+      new Notification("Talha's study plan is ready", { body: `${remaining.length} tasks left · ${remaining.reduce((sum, task) => sum + task.minutes, 0)} minutes remaining.` });
     }
   }
 
@@ -929,7 +938,7 @@ export default function StudyDashboard({
             <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key)}><span>{number}</span>{label}</button>
           ))}
         </nav>
-        <div className="sidebar-card"><span>Exam window</span><strong>{fullDateLabel(settings.examDate)}</strong><small>{daysBetween(new Date(), new Date(`${settings.examDate}T12:00:00`))} days remaining</small></div>
+        <div className="sidebar-card"><span>Exam window</span><strong>{fullDateLabel(settings.examDate)}</strong><small className="days-left">{examDaysLeft} days left</small></div>
         <div className="sidebar-footer"><p>Private family workspace</p><button onClick={signOut}>Sign out</button></div>
       </aside>
 
@@ -947,8 +956,8 @@ export default function StudyDashboard({
               <StatRing value={stats.readiness} label="evidence readiness" />
             </section>
             <section className="section-block">
-              <div className="section-heading"><div><span className="eyebrow">TODAY&apos;S CHECKLIST</span><h2>{(planner.effective.get(todayKey) ?? []).length} tasks · {(planner.effective.get(todayKey) ?? []).reduce((sum, task) => sum + task.minutes, 0)} minutes</h2></div><button className="inline-calendar-button" onClick={() => { setSelectedDate(todayKey); setCalendarMonth(todayKey.slice(0, 7)); setView("calendar"); }}>Open full calendar →</button></div>
-              <div className="today-checklist">{(planner.effective.get(todayKey) ?? []).map((task) => { const checked = planner.completedTaskIds.has(task.id); return <label className={`planner-task ${subjectClass(task.topic.subject)} ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><small>{task.topic.subject} · {task.minutes} min{task.carriedForward ? " · carried forward" : ""}</small><strong>{task.lesson.title}</strong><small>{task.lesson.objective}</small></span><button type="button" onClick={() => { revealTopic(task.topic); setView("syllabus"); }}>Study</button></label>; })}{!(planner.effective.get(todayKey) ?? []).length && <EmptyMessage>Today&apos;s work is complete. Well done—take the win and return tomorrow.</EmptyMessage>}</div>
+              <div className="section-heading"><div><span className="eyebrow">TODAY&apos;S CHECKLIST</span><h2>{todayRemainingTasks.length} task{todayRemainingTasks.length === 1 ? "" : "s"} left · {todayRemainingMinutes} minutes remaining</h2><small className="today-progress-note">{todayCompletedCount} of {todayTasks.length} completed today</small></div><button className="inline-calendar-button" onClick={() => { setSelectedDate(todayKey); setCalendarMonth(todayKey.slice(0, 7)); setView("calendar"); }}>Open full calendar →</button></div>
+              <div className="today-checklist">{todayTasks.map((task) => { const checked = planner.completedTaskIds.has(task.id); return <label className={`planner-task ${subjectClass(task.topic.subject)} ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><small>{task.topic.subject} · {task.minutes} min{task.carriedForward ? " · carried forward" : ""}</small><strong>{task.lesson.title}</strong><small>{task.lesson.objective}</small></span><button type="button" onClick={() => { revealTopic(task.topic); setView("syllabus"); }}>Study</button></label>; })}{!todayTasks.length && <EmptyMessage>No study tasks are scheduled for today.</EmptyMessage>}</div>
             </section>
           </>
         )}
