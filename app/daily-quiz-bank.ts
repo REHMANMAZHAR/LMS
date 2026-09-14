@@ -1,6 +1,6 @@
 import type { DailyQuizQuestion } from "./daily-quiz-model";
 
-type PrivateQuestion = Omit<DailyQuizQuestion, "number"> & {
+export type PrivateQuestion = Omit<DailyQuizQuestion, "number"> & {
   answer: string;
   correctAnswer: string;
   explanation: string;
@@ -256,7 +256,7 @@ export const DAILY_QUIZZES: DailyQuiz[] = BASE_DAILY_QUIZZES.map((item) => ({
 
 const byTaskId = new Map(DAILY_QUIZZES.map((item) => [item.taskId, item]));
 export const DAILY_QUIZ_VERSION = "daily-check-v2";
-export const DAILY_QUIZ_DURATION_SECONDS = 12 * 60;
+export const DAILY_QUIZ_DURATION_SECONDS = 20 * 60;
 export function hasDailyQuiz(taskId: string) { return byTaskId.has(taskId); }
 export function getDailyQuiz(taskId: string) { return byTaskId.get(taskId); }
 export function publicDailyQuestion(question: PrivateQuestion, number: number): DailyQuizQuestion {

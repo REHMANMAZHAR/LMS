@@ -89,3 +89,37 @@ export const loginAttempts = sqliteTable("login_attempts", {
   windowStartedAt: text("window_started_at").notNull(),
   blockedUntil: text("blocked_until"),
 });
+
+
+export const quizBankQuestions = sqliteTable(
+  "quiz_bank_questions",
+  {
+    familyId: text("family_id").notNull().default("talha-family"),
+    taskId: text("task_id").notNull(),
+    questionId: text("question_id").notNull(),
+    subject: text("subject").notNull(),
+    topicId: text("topic_id").notNull(),
+    lessonTitle: text("lesson_title").notNull(),
+    questionType: text("question_type").notNull(),
+    prompt: text("prompt").notNull(),
+    optionsJson: text("options_json").notNull().default("[]"),
+    answer: text("answer").notNull(),
+    correctAnswer: text("correct_answer").notNull(),
+    explanation: text("explanation").notNull(),
+    estimatedMinutes: integer("estimated_minutes").notNull().default(4),
+    sourceReference: text("source_reference"),
+    version: integer("version").notNull().default(1),
+    importedAt: text("imported_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [primaryKey({ columns: [table.familyId, table.taskId, table.questionId] })],
+);
+
+export const quizBankSyncs = sqliteTable("quiz_bank_syncs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  familyId: text("family_id").notNull().default("talha-family"),
+  status: text("status").notNull(),
+  approvedRows: integer("approved_rows").notNull().default(0),
+  rejectedRows: integer("rejected_rows").notNull().default(0),
+  note: text("note"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});

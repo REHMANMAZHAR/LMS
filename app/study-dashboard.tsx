@@ -1124,6 +1124,34 @@ export default function StudyDashboard({
   );
 }
 
+function QuizBankSyncCard() {
+  const [status, setStatus] = useState("Checking quiz bank...");
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/quiz-bank/sync", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data) => setStatus(data.latest?.status === "success"
+        ? `Last sync: ${data.latest.approvedRows} approved questions`
+        : data.configured ? "Ready to sync approved questions" : "Google Sheet connection needs configuring"))
+      .catch(() => setStatus("Quiz-bank status is temporarily unavailable"));
+  }, []);
+
+  async function syncNow() {
+    setSyncing(true); setStatus("Validating approved questions...");
+    try {
+      const response = await fetch("/api/quiz-bank/sync", { method: "POST" });
+      const data = await response.json() as { error?: string; approvedRows?: number; rejectedRows?: number };
+      if (!response.ok) throw new Error(data.error ?? "Sync failed");
+      setStatus(`Published ${data.approvedRows} approved questions${data.rejectedRows ? `; rejected ${data.rejectedRows} invalid rows` : ""}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Quiz-bank sync failed");
+    } finally { setSyncing(false); }
+  }
+
+  return <div className="panel"><div className="section-heading"><div><span className="eyebrow">CONTROLLED QUIZ BANK</span><h2>Google Sheet publishing</h2></div><a href="https://docs.google.com/spreadsheets/d/1IFCOQogNrT9UhwzjLjIzZlLxwqVtQ8_NOsrQfrGSEXI/edit" target="_blank" rel="noreferrer">Open question editor</a></div><p>{status}</p><button type="button" onClick={() => void syncNow()} disabled={syncing}>{syncing ? "Checking..." : "Validate and sync approved rows"}</button><p className="panel-note">Draft and Reviewed rows stay out of Talha&apos;s quizzes. If validation fails, the current working bank remains unchanged.</p></div>;
+}
+
 function ParentView({ progressMap, activity, attempts, stats, settings, requiredDaily }: { progressMap: Map<string, ProgressItem>; activity: ActivityItem[]; attempts: AssessmentAttempt[]; stats: Stats; settings: Record<string, string>; requiredDaily: number }) {
   const recent = Array.from({ length: 7 }, (_, offset) => {
     const date = new Date(); date.setDate(date.getDate() - (6 - offset));
@@ -1168,6 +1196,7 @@ function ParentView({ progressMap, activity, attempts, stats, settings, required
   const leadingErrors = [...errorCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
   const recentDailyChecks = activity.filter((item) => item.kind === "daily-check").slice(0, 10);
   return <section className="parent-layout no-top">
+    <QuizBankSyncCard />
     <div className="metrics-row"><article><span>Syllabus covered</span><strong>{stats.coverage}%</strong><small>{stats.learned} of {stats.total} topics</small></article><article><span>Evidence Secure</span><strong>{stats.mastery}%</strong><small>{stats.mastered} topics with proof</small></article><article><span>Evidence readiness</span><strong>{stats.readiness}%</strong><small>not a predicted grade</small></article><article><span>Daily checks recorded</span><strong>{activity.filter((item) => item.kind === "daily-check").length}</strong><small>{stats.timedEvidence} timed exam attempts</small></article></div>
     <div className="parent-grid"><div className="panel activity-panel"><div className="section-heading"><div><span className="eyebrow">LAST 7 DAYS</span><h2>Study consistency</h2></div><strong>{recent.reduce((sum, day) => sum + day.minutes, 0)} min</strong></div><div className="weekly-bars">{recent.map((day) => <div key={day.key}><div className="bar-track"><span style={{ height: `${Math.max(4, (day.minutes / maxMinutes) * 100)}%` }}><b>{day.minutes || ""}</b></span></div><small>{day.label}</small></div>)}</div><p className="panel-note">Daily target currently requires approximately <strong>{requiredDaily} minutes</strong> on each study day.</p></div>
       <div className="panel alert-panel"><span className="eyebrow">PARENT ATTENTION</span><h2>{overdue.length ? `${overdue.length} recalls are overdue` : "Recall schedule is clear"}</h2>{leadingErrors.length ? <><p>Most frequent sources of lost marks:</p><ul>{leadingErrors.map(([error, count]) => <li key={error}><span>{count}×</span><div><strong>{error}</strong><small>Use the correction note, then re-test on a different date.</small></div></li>)}</ul></> : overdue.length ? <ul>{overdue.slice(0, 4).map((topic) => <li key={topic.id}><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><div><strong>{topic.title}</strong><small>Last studied {dateLabel(progressMap.get(topic.id)?.lastStudiedAt)}</small></div></li>)}</ul> : <p>Run the four subject diagnostics to reveal the first performance priorities.</p>}</div></div>
