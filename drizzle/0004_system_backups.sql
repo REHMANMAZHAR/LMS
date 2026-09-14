@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS system_backups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  family_id TEXT NOT NULL DEFAULT 'talha-family',
+  label TEXT NOT NULL,
+  snapshot_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
