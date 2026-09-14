@@ -123,3 +123,12 @@ export const quizBankSyncs = sqliteTable("quiz_bank_syncs", {
   note: text("note"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+
+export const systemBackups = sqliteTable("system_backups", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  familyId: text("family_id").notNull().default("talha-family"),
+  label: text("label").notNull(),
+  snapshotJson: text("snapshot_json").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
