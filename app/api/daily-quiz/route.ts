@@ -2,7 +2,6 @@ import { and, eq } from "drizzle-orm";
 import { requireFamilySession } from "@/app/family-auth";
 import {
   DAILY_QUIZ_DURATION_SECONDS,
-  DAILY_QUIZ_VERSION,
   markDailyQuestion,
   publicDailyQuestion,
 } from "@/app/daily-quiz-bank";
