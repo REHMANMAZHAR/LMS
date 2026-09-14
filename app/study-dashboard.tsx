@@ -29,7 +29,7 @@ import { REVIEWED_QUIZ_TOPIC_IDS, hasReviewedQuiz, type QuizResultPayload } from
 import DailyQuizView from "./daily-quiz-view";
 import { hasDailyQuiz } from "./daily-quiz-bank";
 import type { DailyQuizResultPayload } from "./daily-quiz-model";
-import { STARTER_LESSONS, sundayLesson, topicLesson, topicLessonCount, type GuidedLesson } from "./lesson-plan";
+import { MAINTENANCE_TOPIC_IDS, STARTER_LESSONS, sundayLesson, topicLesson, topicLessonCount, type GuidedLesson } from "./lesson-plan";
 
 type View = "today" | "calendar" | "syllabus" | "dates" | "quizzes" | "tests" | "plan" | "parent";
 type ProgressItem = {
@@ -242,9 +242,9 @@ function buildPlanner(
       const topic = TOPICS.find((candidate) => candidate.id === guided.topicId);
       if (!topic) return;
       starterTopicIds.add(topic.id);
-      queue.push({ id: `guided:${stream.name}:${index + 1}`, topic, stream: stream.name, kind: "syllabus", lesson: guided, session: index + 1, sessions: STARTER_LESSONS[stream.name].length, minutes: weekdayMinutes });
+      queue.push({ id: `guided:${stream.name}:${index + 1}`, topic, stream: stream.name, kind: MAINTENANCE_TOPIC_IDS.has(topic.id) ? "past-paper" : "syllabus", lesson: MAINTENANCE_TOPIC_IDS.has(topic.id) ? { ...guided, title: `${guided.title}: past-paper maintenance`, objective: `Maintain this confident topic through timed past-paper questions; do not reteach it unless errors show a genuine gap.` } : guided, session: index + 1, sessions: STARTER_LESSONS[stream.name].length, minutes: weekdayMinutes });
     });
-    TOPICS.filter((topic) => topicStream(topic) === stream.name && !starterTopicIds.has(topic.id)).forEach((topic) => {
+    TOPICS.filter((topic) => topicStream(topic) === stream.name && !starterTopicIds.has(topic.id) && !MAINTENANCE_TOPIC_IDS.has(topic.id)).forEach((topic) => {
       const sessions = topicLessonCount(topic, weekdayMinutes);
       for (let session = 1; session <= sessions; session += 1) {
         queue.push({ id: `${topic.id}:${session}`, topic, stream: stream.name, kind: "syllabus", lesson: topicLesson(topic, session, sessions), session, sessions, minutes: weekdayMinutes });
