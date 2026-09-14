@@ -67,11 +67,11 @@ export async function POST() {
     if (!response.ok) throw new Error(`Google Sheet returned ${response.status}.`);
     const { valid, rejected } = validate(await response.text());
     const db = await getDb();
-    await db.transaction(async (tx) => {
-      await tx.delete(quizBankQuestions).where(eq(quizBankQuestions.familyId, FAMILY_ID));
-      await tx.insert(quizBankQuestions).values(valid);
-      await tx.insert(quizBankSyncs).values({ familyId: FAMILY_ID, status: "success", approvedRows: valid.length, rejectedRows: rejected.length, note: rejected.length ? `Rejected: ${rejected.slice(0, 8).join(", ")}` : "All approved rows passed validation." });
-    });
+    await db.batch([
+      db.delete(quizBankQuestions).where(eq(quizBankQuestions.familyId, FAMILY_ID)),
+      db.insert(quizBankQuestions).values(valid),
+      db.insert(quizBankSyncs).values({ familyId: FAMILY_ID, status: "success", approvedRows: valid.length, rejectedRows: rejected.length, note: rejected.length ? `Rejected: ${rejected.slice(0, 8).join(", ")}` : "All approved rows passed validation." }),
+    ]);
     return Response.json({ ok: true, approvedRows: valid.length, rejectedRows: rejected.length });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Quiz-bank sync failed.";
