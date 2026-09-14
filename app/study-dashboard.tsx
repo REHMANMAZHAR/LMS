@@ -126,6 +126,19 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   remindersEnabled: "false",
 };
 
+
+const IMPORTANT_DATES = [
+  { date: "2027-05-03", label: "Pakistan Studies 0448/01 — History & Culture", duration: "1h 30m" },
+  { date: "2027-05-05", label: "Pakistan Studies 0448/02 — Environment of Pakistan", duration: "1h 30m" },
+  { date: "2027-05-07", label: "Mathematics 0580/22 — Extended Non-Calculator", duration: "2h" },
+  { date: "2027-05-10", label: "Mathematics 0580/42 — Extended Calculator", duration: "2h" },
+  { date: "2027-05-12", label: "Islamiyat 0493/12 — Qur'anic Passages & Early History", duration: "1h 30m" },
+  { date: "2027-05-14", label: "Islamiyat 0493/22 — Hadiths & Islamic History", duration: "1h 30m" },
+  { date: "2027-05-17", label: "Chemistry 0620/42 — Extended Theory", duration: "1h 15m" },
+  { date: "2027-05-19", label: "Chemistry 0620/62 — Alternative to Practical", duration: "1h" },
+  { date: "2027-05-21", label: "Chemistry 0620/22 — Extended Multiple Choice", duration: "45m" },
+] as const;
+
 const EMPTY_STATE: FamilyState = {
   progress: [],
   settings: DEFAULT_SETTINGS,
@@ -1016,6 +1029,14 @@ export default function StudyDashboard({
             onOpenSyllabus={() => setView("syllabus")}
             onCompleted={handleQuizCompleted}
           />
+        )}
+
+        {view === "dates" && (
+          <section className="section-block no-top">
+            <div className="panel"><div className="section-heading"><div><span className="eyebrow">CAMBRIDGE MAY/JUNE 2027 · VARIANT 2</span><h2>Examination countdown</h2></div><span className="quiet">From the approved 22-week tracker</span></div>
+              <div className="daily-check-history-list">{IMPORTANT_DATES.map((exam) => { const left = Math.max(0, Math.ceil((dateFromKey(exam.date).getTime() - dateFromKey(todayKey).getTime()) / 86_400_000)); return <article key={exam.date}><div><strong>{fullDateLabel(exam.date)}</strong><small>{exam.duration}</small></div><p><b>{exam.label}</b><br />{left} days left</p></article>; })}</div>
+            </div>
+          </section>
         )}
 
         {view === "tests" && (
