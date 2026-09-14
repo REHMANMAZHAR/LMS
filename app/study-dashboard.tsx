@@ -31,7 +31,7 @@ import { hasDailyQuiz } from "./daily-quiz-bank";
 import type { DailyQuizResultPayload } from "./daily-quiz-model";
 import { STARTER_LESSONS, sundayLesson, topicLesson, topicLessonCount, type GuidedLesson } from "./lesson-plan";
 
-type View = "today" | "calendar" | "syllabus" | "quizzes" | "tests" | "plan" | "parent";
+type View = "today" | "calendar" | "syllabus" | "dates" | "quizzes" | "tests" | "plan" | "parent";
 type ProgressItem = {
   topicId: string;
   stage: number;
@@ -119,9 +119,9 @@ function topicStream(topic: Topic): StudyStream {
 const DEFAULT_SETTINGS: Record<string, string> = {
   targetDate: "2027-02-21",
   examDate: "2027-05-21",
-  dailyMinutes: "450",
+  dailyMinutes: "360",
   studyDays: "7",
-  plannerStartDate: "2026-08-31",
+  plannerStartDate: "2026-09-15",
   reminderTime: "09:00",
   remindersEnabled: "false",
 };
@@ -219,151 +219,95 @@ function buildPlanner(
   settings: Record<string, string>,
   today: string,
 ) {
-  const weekdayCapacity = Math.max(150, Number(settings.dailyMinutes || 450));
-  const studyDays = Math.max(1, Number(settings.studyDays || 7));
   const startDate = settings.plannerStartDate || today;
-  const minutesForDate = (key: string) => dateFromKey(key).getDay() === 0 ? 120 : Math.round(weekdayCapacity / STUDY_STREAMS.length);
-  const streamMinutes = STUDY_STREAMS.map(() => Math.round(weekdayCapacity / STUDY_STREAMS.length));
-  const streamQueues = STUDY_STREAMS.map((stream, streamIndex) => {
+  const weekdayMinutes = 180;
+  const streamQueues = new Map<StudyStream, Omit<PlannerTask, "originalDate" | "scheduledDate" | "carriedForward">[]>();
+  STUDY_STREAMS.forEach((stream) => {
     const queue: Omit<PlannerTask, "originalDate" | "scheduledDate" | "carriedForward">[] = [];
-    const minutesPerSession = streamMinutes[streamIndex];
     const starterTopicIds = new Set<string>();
     STARTER_LESSONS[stream.name].forEach((guided, index) => {
       const topic = TOPICS.find((candidate) => candidate.id === guided.topicId);
       if (!topic) return;
       starterTopicIds.add(topic.id);
-      queue.push({
-        id: `guided:${stream.name}:${index + 1}`,
-        topic,
-        stream: stream.name,
-        kind: "syllabus",
-        lesson: guided,
-        session: index + 1,
-        sessions: STARTER_LESSONS[stream.name].length,
-        minutes: minutesPerSession,
-      });
+      queue.push({ id: `guided:${stream.name}:${index + 1}`, topic, stream: stream.name, kind: "syllabus", lesson: guided, session: index + 1, sessions: STARTER_LESSONS[stream.name].length, minutes: weekdayMinutes });
     });
     TOPICS.filter((topic) => topicStream(topic) === stream.name && !starterTopicIds.has(topic.id)).forEach((topic) => {
-      const sessions = topicLessonCount(topic, minutesPerSession);
+      const sessions = topicLessonCount(topic, weekdayMinutes);
       for (let session = 1; session <= sessions; session += 1) {
-        queue.push({
-          id: `${topic.id}:${session}`,
-          topic,
-          stream: stream.name,
-          kind: "syllabus",
-          lesson: topicLesson(topic, session, sessions),
-          session,
-          sessions,
-          minutes: minutesPerSession,
-        });
+        queue.push({ id: `${topic.id}:${session}`, topic, stream: stream.name, kind: "syllabus", lesson: topicLesson(topic, session, sessions), session, sessions, minutes: weekdayMinutes });
       }
     });
-    return queue;
+    streamQueues.set(stream.name, queue);
   });
+
   const canonical = new Map<string, PlannerTask[]>();
-  let date = startDate;
-  let practiceDay = 0;
-  const lastLessonTitles = STUDY_STREAMS.map(() => "the week's assigned lessons");
+  const lastLesson = new Map<StudyStream, PlannerTask>();
   const examDate = settings.examDate || "2027-05-21";
+  let date = startDate; let teachingDay = 0; let week = 0;
   while (date <= examDate) {
-    if (isStudyDate(date, studyDays)) {
-      const isSunday = dateFromKey(date).getDay() === 0;
-      const dayTasks = STUDY_STREAMS.map((stream, streamIndex) => {
-        if (isSunday) {
-          const topic = TOPICS.find((candidate) => topicStream(candidate) === stream.name) ?? TOPICS[0];
-          return {
-            id: `revision:${stream.name}:${date}`,
-            topic,
-            stream: stream.name,
-            kind: "revision" as const,
-            lesson: sundayLesson(stream.name, lastLessonTitles[streamIndex]),
-            session: 1,
-            sessions: 1,
-            minutes: minutesForDate(date),
-          };
-        }
-        const syllabusTask = streamQueues[streamIndex].shift();
-        if (syllabusTask) {
-          lastLessonTitles[streamIndex] = syllabusTask.lesson.title;
-          return syllabusTask;
-        }
-        const topics = TOPICS.filter((topic) => topicStream(topic) === stream.name);
-        const topic = topics[practiceDay % topics.length];
-        const paperCycle: Record<StudyStream, string[]> = {
-          Mathematics: ["Paper 2 non-calculator", "Paper 4 calculator"],
-          Chemistry: ["Paper 2 MCQ", "Paper 4 theory", "Paper 6 practical"],
-          Islamiyat: ["Paper 1 structured answers", "Paper 2 structured answers"],
-          "Pakistan History": ["Paper 1 source and judgement practice"],
-          "Pakistan Geography": ["Paper 2 data and case-study practice"],
-        };
-        const paperLabel = paperCycle[stream.name][practiceDay % paperCycle[stream.name].length];
-        const marathon = date >= "2027-02-22";
-        const label = marathon ? paperLabel : `Topical questions: ${topic.title}`;
-        const practiceTopic = { ...topic, code: marathon ? "PAST PAPER" : "EXAM PRACTICE", title: label };
-        const guide = topicLesson(practiceTopic, 1, 1);
-        return { id: `past:${stream.name}:${date}`, topic: practiceTopic, stream: stream.name, kind: "past-paper" as const, lesson: { ...guide, title: label }, session: 1, sessions: 1, minutes: minutesForDate(date) };
-      });
-      canonical.set(date, dayTasks.map((task) => ({ ...task, minutes: minutesForDate(date), originalDate: date, scheduledDate: date, carriedForward: false })));
-      practiceDay += 1;
+    const weekday = dateFromKey(date).getDay();
+    let streams: StudyStream[] = [];
+    if (weekday === 0) streams = ["Chemistry", "Islamiyat"];
+    else if (weekday === 6) streams = ["Mathematics", week % 2 === 0 ? "Pakistan History" : "Pakistan Geography"];
+    else {
+      const pattern: StudyStream[][] = [
+        ["Mathematics", "Islamiyat"],
+        ["Chemistry", "Pakistan History"],
+        ["Mathematics", "Pakistan Geography"],
+        ["Chemistry", "Islamiyat"],
+        ["Mathematics", week % 2 === 0 ? "Pakistan History" : "Pakistan Geography"],
+      ];
+      streams = pattern[teachingDay % 5];
+      teachingDay += 1;
+      if (teachingDay % 5 === 0) week += 1;
     }
+    const weekend = weekday === 0 || weekday === 6;
+    const tasks = streams.flatMap((stream) => {
+      if (weekend) {
+        const previous = lastLesson.get(stream);
+        const topic = previous?.topic ?? TOPICS.find((candidate) => topicStream(candidate) === stream);
+        if (!topic) return [];
+        return [{ id: `weekend:${stream}:${date}`, topic, stream, kind: "revision" as const, lesson: { ...sundayLesson(stream, previous?.lesson.title ?? topic.title), title: `${stream}: one-hour whole-topic assessment`, objective: `Complete a timed whole-topic assessment, mark it, and record the exact learning gap.` }, session: 1, sessions: 1, minutes: 60 }];
+      }
+      const task = streamQueues.get(stream)?.shift();
+      if (task) lastLesson.set(stream, task as PlannerTask);
+      return task ? [task] : [];
+    });
+    canonical.set(date, tasks.map((task) => ({ ...task, originalDate: date, scheduledDate: date, carriedForward: false })));
     date = moveDate(date, 1);
   }
+
   const canonicalTasks = [...canonical.values()].flat();
   const rawDoneDate = (taskId: string) => settings[`planner.done.${taskId}`] || "";
-  // A study day has exactly one slot for each stream. Older builds could pull the
-  // next lesson into the same slot after a checkbox was ticked, so keep only the
-  // first canonical completion for each stream/date and return extras to the queue.
-  const completedBySlot = new Map<string, string>();
-  canonicalTasks.forEach((task) => {
-    const completedOn = rawDoneDate(task.id);
-    if (!completedOn) return;
-    const slot = `${completedOn}:${task.stream}`;
-    if (!completedBySlot.has(slot)) completedBySlot.set(slot, task.id);
-  });
-  const completedTaskIds = new Set(completedBySlot.values());
-  const doneDate = (taskId: string) => completedTaskIds.has(taskId) ? rawDoneDate(taskId) : "";
-  const logicalCompletion = (task: PlannerTask) => {
-    if (task.kind !== "syllabus") return false;
-    const stage = progressMap.get(task.topic.id)?.stage ?? 0;
-    const completedShare = [0, .45, .75, 1][stage] ?? 0;
-    return task.session <= Math.floor(task.sessions * completedShare);
-  };
-  const incomplete = canonicalTasks.filter((task) => !doneDate(task.id) && !logicalCompletion(task));
+  const completedTaskIds = new Set(canonicalTasks.filter((task) => rawDoneDate(task.id)).map((task) => task.id));
+  const logicalCompletion = (task: PlannerTask) => task.kind === "syllabus" && task.session <= Math.floor(task.sessions * ([0, .45, .75, 1][progressMap.get(task.topic.id)?.stage ?? 0] ?? 0));
+  const incomplete = canonicalTasks.filter((task) => !completedTaskIds.has(task.id) && !logicalCompletion(task)).sort((a, b) => a.originalDate.localeCompare(b.originalDate));
   const effective = new Map<string, PlannerTask[]>();
-  const repeatedTopics = new Set<string>();
-  STUDY_STREAMS.forEach((stream) => {
-    const queue = incomplete.filter((task) => task.stream === stream.name).sort((a, b) => a.originalDate.localeCompare(b.originalDate));
-    const streamFinishedToday = canonicalTasks.some((task) => task.stream === stream.name && doneDate(task.id) === today);
-    let effectiveDate = today < startDate ? startDate : streamFinishedToday ? moveDate(today, 1) : today;
-    queue.forEach((task) => {
-      const repeatDate = settings[`planner.repeat.${task.topic.id}`];
-      if (repeatDate && repeatDate >= today && !repeatedTopics.has(task.topic.id)) {
-        repeatedTopics.add(task.topic.id);
-        const repeated = { ...task, scheduledDate: repeatDate, carriedForward: repeatDate !== task.originalDate };
-        effective.set(repeatDate, [...(effective.get(repeatDate) ?? []), repeated]);
-        return;
-      }
-      while (!isStudyDate(effectiveDate, studyDays)) effectiveDate = moveDate(effectiveDate, 1);
-      const moved = { ...task, minutes: minutesForDate(effectiveDate), scheduledDate: effectiveDate, carriedForward: task.originalDate < effectiveDate };
-      effective.set(effectiveDate, [...(effective.get(effectiveDate) ?? []), moved]);
-      effectiveDate = moveDate(effectiveDate, 1);
-    });
+  canonicalTasks.filter((task) => completedTaskIds.has(task.id)).forEach((task) => {
+    const completedOn = rawDoneDate(task.id);
+    effective.set(completedOn, [...(effective.get(completedOn) ?? []), { ...task, scheduledDate: completedOn }]);
   });
-  canonicalTasks.forEach((task) => {
-    const completedOn = doneDate(task.id);
-    if (completedOn) effective.set(completedOn, [...(effective.get(completedOn) ?? []), { ...task, scheduledDate: completedOn, carriedForward: false }]);
+
+  const completedToday = canonicalTasks.some((task) => rawDoneDate(task.id) === today);
+  let cursor = today < startDate ? startDate : today;
+  let remainingToday = completedToday ? Math.max(0, 2 - (effective.get(today)?.length ?? 0)) : 2;
+  incomplete.forEach((task) => {
+    const repeatDate = settings[`planner.repeat.${task.topic.id}`];
+    if (repeatDate && repeatDate >= today) cursor = repeatDate;
+    if (completedToday && cursor === today && task.originalDate > today) cursor = moveDate(today, 1);
+    while ((effective.get(cursor)?.length ?? 0) >= (cursor === today ? remainingToday + (effective.get(today)?.length ?? 0) : 2)) cursor = moveDate(cursor, 1);
+    const moved = { ...task, scheduledDate: cursor, carriedForward: task.originalDate < cursor };
+    effective.set(cursor, [...(effective.get(cursor) ?? []), moved]);
   });
-  const tasksById = new Map([...canonical.values()].flat().map((task) => [task.id, task]));
+
   return {
-    canonical,
-    effective,
-    tasksById,
+    canonical, effective,
+    tasksById: new Map(canonicalTasks.map((task) => [task.id, task])),
     completedTaskIds,
     predictedCompletion: [...effective.entries()].flatMap(([key, tasks]) => tasks.some((task) => task.kind === "syllabus") ? [key] : []).sort().at(-1) ?? today,
     overdueCount: incomplete.filter((task) => task.originalDate < today).length,
   };
 }
-
 function StatRing({ value, label }: { value: number; label: string }) {
   return (
     <div
@@ -960,8 +904,8 @@ export default function StudyDashboard({
         <nav aria-label="Main navigation">
           {([
             ["today", "Today", "01"], ["calendar", "Calendar", "02"],
-            ["syllabus", "Syllabus", "03"], ["quizzes", "Quizzes", "04"],
-            ["tests", "Tests", "05"], ["plan", "Study plan", "06"], ["parent", "Parent view", "07"],
+            ["syllabus", "Syllabus", "03"], ["dates", "Important Dates", "04"],
+            ["tests", "Weekend Assessments", "05"], ["parent", "Parent view", "06"],
           ] as Array<[View, string, string]>).map(([key, label, number]) => (
             <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key)}><span>{number}</span>{label}</button>
           ))}
@@ -972,7 +916,7 @@ export default function StudyDashboard({
 
       <main className="main-area">
         <header className="topbar">
-          <div className="topbar-title"><span className="eyebrow">CAMBRIDGE IGCSE · FOUR SUBJECTS</span><h1>{view === "parent" ? "Parent overview" : view === "calendar" ? "Daily study calendar" : view === "syllabus" ? "Syllabus map" : view === "quizzes" ? "Topic quizzes" : view === "tests" ? "Tests & retention" : view === "plan" ? "Adaptive study plan" : `${greeting}, Talha`}</h1><div className="topbar-exam-countdown"><span>Exam: {fullDateLabel(settings.examDate)}</span><strong>{examDaysLeft} days left</strong></div></div>
+          <div className="topbar-title"><span className="eyebrow">CAMBRIDGE IGCSE · FOUR SUBJECTS</span><h1>{view === "parent" ? "Parent overview" : view === "calendar" ? "Daily study calendar" : view === "syllabus" ? "Syllabus map" : view === "dates" ? "Important dates" : view === "quizzes" ? "Topic quizzes" : view === "tests" ? "Weekend assessments" : view === "plan" ? "Adaptive study plan" : `${greeting}, Talha`}</h1><div className="topbar-exam-countdown"><span>Exam: {fullDateLabel(settings.examDate)}</span><strong>{examDaysLeft} days left</strong></div></div>
           <div className="account-pill"><span>{displayName.slice(0, 1).toUpperCase()}</span><div><strong>{displayName}</strong><small>{lastSynced ? `Synced ${lastSynced.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : view === "parent" ? "Parent mode" : "Secure family access"}</small></div></div>
         </header>
 
@@ -993,7 +937,7 @@ export default function StudyDashboard({
         {view === "calendar" && (
           <section className="calendar-layout no-top">
             <div className="calendar-summary panel">
-              <div><span className="eyebrow">HOMESCHOOL STUDY PLAN</span><h2>{planner.overdueCount ? `${planner.overdueCount} missed task${planner.overdueCount === 1 ? "" : "s"} safely carried forward` : "All five streams are on schedule"}</h2><p>Monday-Saturday assigns 90 minutes per stream. Sunday assigns two hours per stream for consolidation, correction and testing. A missed stream moves its own remaining sequence forward.</p></div>
+              <div><span className="eyebrow">HOMESCHOOL STUDY PLAN</span><h2>{planner.overdueCount ? `${planner.overdueCount} missed task${planner.overdueCount === 1 ? "" : "s"} safely carried forward` : "All five streams are on schedule"}</h2><p>Each day contains two principal subjects. Weekday lessons use focused three-hour blocks followed by separate 20-minute checks; weekends use one-hour whole-topic assessments. Missed work moves the remaining timeline forward without adding a future lesson to the same day.</p></div>
               <div className="timeline-status"><span>Predicted syllabus completion</span><strong>{fullDateLabel(planner.predictedCompletion)}</strong><small>{planner.predictedCompletion <= settings.targetDate ? "Within the current target" : "Later than the current target - adjust time or study days"}</small></div>
             </div>
             <div className="syllabus-bars panel">
