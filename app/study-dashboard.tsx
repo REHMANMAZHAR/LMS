@@ -263,14 +263,26 @@ function buildPlanner(
     if (weekday === 0) streams = ["Chemistry", "Islamiyat"];
     else if (weekday === 6) streams = ["Mathematics", week % 2 === 0 ? "Pakistan History" : "Pakistan Geography"];
     else {
-      const pattern: StudyStream[][] = [
+      const pdfPattern: StudyStream[][] = [
         ["Mathematics", "Islamiyat"],
         ["Chemistry", "Pakistan History"],
         ["Mathematics", "Pakistan Geography"],
         ["Chemistry", "Islamiyat"],
         ["Mathematics", week % 2 === 0 ? "Pakistan History" : "Pakistan Geography"],
       ];
-      streams = pattern[teachingDay % 5];
+      if (teachingDay < 10) {
+        streams = pdfPattern[teachingDay % 5];
+      } else {
+        // Weeks 3–22 are rebuilt from the real remaining syllabus workload.
+        // Pick two different streams with the largest remaining queues so no
+        // subject is left incomplete by blindly repeating the PDF placeholders.
+        streams = STUDY_STREAMS
+          .map((stream) => ({ name: stream.name, remaining: streamQueues.get(stream.name)?.length ?? 0 }))
+          .filter((stream) => stream.remaining > 0)
+          .sort((left, right) => right.remaining - left.remaining)
+          .slice(0, 2)
+          .map((stream) => stream.name);
+      }
       teachingDay += 1;
       if (teachingDay % 5 === 0) week += 1;
     }
