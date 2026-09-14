@@ -3,10 +3,10 @@ import { requireFamilySession } from "@/app/family-auth";
 import {
   DAILY_QUIZ_DURATION_SECONDS,
   DAILY_QUIZ_VERSION,
-  getDailyQuiz,
   markDailyQuestion,
   publicDailyQuestion,
 } from "@/app/daily-quiz-bank";
+import { resolveDailyQuiz } from "@/app/dynamic-daily-quiz";
 import { getDb } from "@/db";
 import { activity, quizAttempts, quizSessions } from "@/db/schema";
 
@@ -28,7 +28,8 @@ export async function GET(request: Request) {
   try {
     await requireFamilySession();
     const taskId = new URL(request.url).searchParams.get("taskId") ?? "";
-    const dailyQuiz = getDailyQuiz(taskId);
+    const resolved = await resolveDailyQuiz(taskId);
+    const dailyQuiz = resolved?.quiz;
     if (!dailyQuiz) return Response.json({ error: "A reviewed daily check is not available for this lesson yet." }, { status: 404 });
 
     const now = new Date();
@@ -39,7 +40,7 @@ export async function GET(request: Request) {
       id: sessionId,
       familyId: FAMILY_ID,
       topicId: taskId,
-      quizVersion: DAILY_QUIZ_VERSION,
+      quizVersion: resolved!.version,
       questionIds: JSON.stringify(dailyQuiz.questions.map((question) => question.id)),
       startedAt: now.toISOString(),
       expiresAt: expiresAt.toISOString(),
@@ -71,8 +72,9 @@ export async function POST(request: Request) {
     const [session] = await db.select().from(quizSessions).where(and(eq(quizSessions.id, sessionId), eq(quizSessions.familyId, FAMILY_ID))).limit(1);
     if (!session) return Response.json({ error: "This daily check could not be found. Start a new check." }, { status: 404 });
     if (session.submittedAt) return Response.json({ error: "This daily check has already been submitted." }, { status: 409 });
-    if (session.quizVersion !== DAILY_QUIZ_VERSION) return Response.json({ error: "This daily check was updated. Start a fresh attempt." }, { status: 409 });
-    const dailyQuiz = getDailyQuiz(session.topicId);
+    const resolved = await resolveDailyQuiz(session.topicId);
+    const dailyQuiz = resolved?.quiz;
+    if (resolved && session.quizVersion !== resolved.version) return Response.json({ error: "This daily check was updated. Start a fresh attempt." }, { status: 409 });
     if (!dailyQuiz) return Response.json({ error: "The lesson check could not be found." }, { status: 404 });
 
     let questionIds: string[] = [];
@@ -105,7 +107,7 @@ export async function POST(request: Request) {
     await db.batch([
       db.insert(quizAttempts).values({
         familyId: FAMILY_ID, sessionId, topicId: session.topicId, subject,
-        quizVersion: DAILY_QUIZ_VERSION, timed: now.getTime() <= new Date(session.expiresAt).getTime(),
+        quizVersion: session.quizVersion, timed: now.getTime() <= new Date(session.expiresAt).getTime(),
         score, maxScore, durationSeconds, responsesJson: JSON.stringify(responses),
         feedbackJson: JSON.stringify(feedback), errorSummary: outcome, createdAt: now.toISOString(),
       }),
