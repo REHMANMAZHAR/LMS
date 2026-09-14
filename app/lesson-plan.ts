@@ -19,7 +19,14 @@ function lesson(topicId: string, title: string, objective: string, keyPoints: st
   return { topicId, title, objective, keyPoints, studyMethod: method, practice, recall };
 }
 
-/** The first twelve teaching days reproduce the detailed daily level in the approved master planner. */
+
+export const MAINTENANCE_TOPIC_IDS = new Set([
+  "math-e1-1", "math-e1-3", "math-e1-4", "math-e1-5", "math-e1-6",
+  "math-e1-9", "math-e1-14", "math-e1-15", "math-e2-1", "math-e2-2",
+  "chem-1-1", "chem-1-2", "chem-2-1", "chem-2-2",
+]);
+
+/** Weeks 1 and 2 reproduce the approved PDF; confident topics are assigned as maintenance rather than reteaching. */
 export const STARTER_LESSONS: Record<LessonStream, StarterLesson[]> = {
   Mathematics: [
     lesson("math-e2-5", "Simultaneous linear equations", "Learn elimination and substitution and form equations from written problems.", "Elimination; substitution; checking both unknowns; visible method marks.", "Solve a graded textbook set completely by hand.", "Reproduce both methods and check one solution."),
