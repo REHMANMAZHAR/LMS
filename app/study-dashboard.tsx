@@ -319,6 +319,7 @@ function isRevisionDue(item: ProgressItem | undefined) {
 
 function buildPlanner(
   _progressMap: ReadonlyMap<string, ProgressItem>,
+  previouslyCompletedTopicIds: ReadonlySet<string>,
   settings: Record<string, string>,
   today: string,
 ) {
@@ -334,10 +335,10 @@ function buildPlanner(
       starterTopicIds.add(topic.id);
       // Talha explicitly confirmed these topics. They stay outside the teaching queue
       // and are revisited only through past-paper maintenance, never as today's lesson.
-      if (MAINTENANCE_TOPIC_IDS.has(topic.id)) return;
+      if (MAINTENANCE_TOPIC_IDS.has(topic.id) || previouslyCompletedTopicIds.has(topic.id)) return;
       queue.push({ id: `${ACTIVE_PLAN_VERSION}:guided:${stream.name}:${topic.id}:${index + 1}`, topic, stream: stream.name, kind: "syllabus", lesson: guided, session: index + 1, sessions: STARTER_LESSONS[stream.name].length, minutes: weekdayMinutes });
     });
-    TOPICS.filter((topic) => topicStream(topic) === stream.name && !starterTopicIds.has(topic.id) && !MAINTENANCE_TOPIC_IDS.has(topic.id)).forEach((topic) => {
+    TOPICS.filter((topic) => topicStream(topic) === stream.name && !starterTopicIds.has(topic.id) && !MAINTENANCE_TOPIC_IDS.has(topic.id) && !previouslyCompletedTopicIds.has(topic.id)).forEach((topic) => {
       const sessions = topicLessonCount(topic, weekdayMinutes);
       for (let session = 1; session <= sessions; session += 1) {
         queue.push({ id: `${ACTIVE_PLAN_VERSION}:topic:${topic.id}:${session}`, topic, stream: stream.name, kind: "syllabus", lesson: topicLesson(topic, session, sessions), session, sessions, minutes: weekdayMinutes });
@@ -551,16 +552,24 @@ export default function StudyDashboard({
     () => new Map(familyState.progress.map((item) => [item.topicId, item])),
     [familyState.progress],
   );
+  const archivedCompletedTopicIds = useMemo(
+    () => new Set(Object.keys(familyState.archivedCompletions)),
+    [familyState.archivedCompletions],
+  );
+  const progressStageFor = useCallback(
+    (topic: Topic) => Math.max(progressMap.get(topic.id)?.stage ?? 0, archivedCompletedTopicIds.has(topic.id) ? 1 : 0),
+    [archivedCompletedTopicIds, progressMap],
+  );
 
   const stats = useMemo<Stats>(() => {
     const activeTopics = TOPICS.filter((topic) => !MAINTENANCE_TOPIC_IDS.has(topic.id));
     const total = activeTopics.length;
-    const learned = activeTopics.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) >= 1).length;
-    const practised = activeTopics.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) >= 2).length;
-    const mastered = activeTopics.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) >= 3).length;
+    const learned = activeTopics.filter((topic) => progressStageFor(topic) >= 1).length;
+    const practised = activeTopics.filter((topic) => progressStageFor(topic) >= 2).length;
+    const mastered = activeTopics.filter((topic) => progressStageFor(topic) >= 3).length;
     const totalMinutes = activeTopics.reduce((sum, topic) => sum + topic.minutes, 0);
     const weighted = (minimumStage: number) => Math.round(
-      (activeTopics.reduce((sum, topic) => sum + ((progressMap.get(topic.id)?.stage ?? 0) >= minimumStage ? topic.minutes : 0), 0) / totalMinutes) * 100,
+      (activeTopics.reduce((sum, topic) => sum + (progressStageFor(topic) >= minimumStage ? topic.minutes : 0), 0) / totalMinutes) * 100,
     );
     const coverage = weighted(1);
     const practice = weighted(2);
@@ -582,7 +591,7 @@ export default function StudyDashboard({
       Math.min(100, timedEvidence * 10) * 0.1,
     );
     const remainingMinutes = activeTopics.reduce((sum, topic) => {
-      const stage = progressMap.get(topic.id)?.stage ?? 0;
+      const stage = progressStageFor(topic);
       return sum + topic.minutes * [1, 0.55, 0.25, 0][stage];
     }, 0);
     return {
@@ -598,7 +607,7 @@ export default function StudyDashboard({
       readiness,
       remainingMinutes,
     };
-  }, [familyState.attempts, progressMap]);
+  }, [familyState.attempts, progressStageFor]);
 
   const settings = useMemo(() => ({ ...DEFAULT_SETTINGS, ...familyState.settings }), [familyState.settings]);
   const remindersEnabled = settings.remindersEnabled === "true" && typeof Notification !== "undefined" && Notification.permission === "granted";
@@ -609,8 +618,8 @@ export default function StudyDashboard({
   const feasible = plannedDaily >= requiredDaily;
   const todayKey = localDateKey();
   const planner = useMemo(
-    () => buildPlanner(progressMap, settings, todayKey),
-    [progressMap, settings, todayKey],
+    () => buildPlanner(progressMap, archivedCompletedTopicIds, settings, todayKey),
+    [archivedCompletedTopicIds, progressMap, settings, todayKey],
   );
   const topicTaskCompletion = useMemo(() => {
     const completion = new Map<string, { completed: number; total: number }>();
@@ -644,9 +653,9 @@ export default function StudyDashboard({
   const streamProgress = useMemo(() => STUDY_STREAMS.map((stream) => {
     const topics = TOPICS.filter((topic) => topicStream(topic) === stream.name && !MAINTENANCE_TOPIC_IDS.has(topic.id));
     const total = topics.reduce((sum, topic) => sum + topic.minutes, 0);
-    const completed = topics.reduce((sum, topic) => sum + topic.minutes * ([0, .45, .75, 1][progressMap.get(topic.id)?.stage ?? 0] ?? 0), 0);
+    const completed = topics.reduce((sum, topic) => sum + topic.minutes * ([0, .45, .75, 1][progressStageFor(topic)] ?? 0), 0);
     return { ...stream, percent: total ? Math.round(completed / total * 100) : 0 };
-  }), [progressMap]);
+  }), [progressStageFor]);
   const selectedPlannerTasks = selectedDate < todayKey
     ? (planner.canonical.get(selectedDate) ?? [])
     : (planner.effective.get(selectedDate) ?? []);
@@ -701,7 +710,7 @@ export default function StudyDashboard({
     const topics = TOPICS.filter((topic) => topic.subject === roadmapSubject && !MAINTENANCE_TOPIC_IDS.has(topic.id));
     const totalMinutes = topics.reduce((sum, topic) => sum + topic.minutes, 0);
     const completedMinutes = topics.reduce((sum, topic) => {
-      const stage = progressMap.get(topic.id)?.stage ?? 0;
+      const stage = progressStageFor(topic);
       return sum + topic.minutes * [0, 0.45, 0.75, 1][stage];
     }, 0);
     return {
@@ -710,14 +719,14 @@ export default function StudyDashboard({
       completedMinutes: Math.round(completedMinutes),
       remainingMinutes: Math.max(0, Math.round(totalMinutes - completedMinutes)),
       progress: Math.round((completedMinutes / totalMinutes) * 100),
-      nextTopic: topics.find((topic) => (progressMap.get(topic.id)?.stage ?? 0) < 3),
+      nextTopic: topics.find((topic) => progressStageFor(topic) < 1),
     };
-  }), [progressMap]);
+  }), [progressStageFor]);
 
   const filteredTopics = useMemo(() => {
     const query = search.trim().toLowerCase();
     return TOPICS.filter((topic) => {
-      const topicStage = progressMap.get(topic.id)?.stage ?? 0;
+      const topicStage = progressStageFor(topic);
       const matchesSubject = subject === "All" || topic.subject === subject;
       const maintenance = MAINTENANCE_TOPIC_IDS.has(topic.id);
       const taskCompletion = topicTaskCompletion.get(topic.id) ?? { completed: 0, total: 0 };
@@ -734,7 +743,7 @@ export default function StudyDashboard({
       const matchesQuery = !query || `${topic.code} ${topic.unit} ${topic.title}`.toLowerCase().includes(query);
       return matchesSubject && matchesStage && matchesQuery;
     });
-  }, [progressMap, search, stageFilter, subject, topicTaskCompletion]);
+  }, [progressMap, progressStageFor, search, stageFilter, subject, topicTaskCompletion]);
 
   const chosenTopic = TOPICS.find((topic) => topic.id === chosenTopicId) ?? TOPICS[0];
   const chosenPrerequisites = prerequisiteTopics(chosenTopic.id);
@@ -1162,12 +1171,13 @@ export default function StudyDashboard({
             <div className="filter-panel"><div className="subject-tabs"><button className={subject === "All" ? "active" : ""} onClick={() => setSubject("All")}>All <span>{TOPICS.length}</span></button>{SUBJECTS.map((item) => <button key={item} className={subject === item ? "active" : ""} onClick={() => setSubject(item)}>{SUBJECT_META[item].short} <span>{TOPICS.filter((topic) => topic.subject === item).length}</span></button>)}</div><div className="filter-controls"><label><span className="sr-only">Search syllabus</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search code, unit or topic" /></label><select value={stageFilter} onChange={(event) => setStageFilter(event.target.value)} aria-label="Filter syllabus completion"><option>All topics</option><option>Completed</option><option>Completed — not yet secure</option><option>Secure</option><option>Partially completed</option><option>Remaining</option><option>Maintenance</option><option>Revision due</option></select><strong>{filteredTopics.length} topics</strong></div></div>
             <div className="topic-list">
               {filteredTopics.map((topic) => {
-                const item = progressMap.get(topic.id); const topicStage = item?.stage ?? 0; const open = expanded === topic.id; const maintenance = MAINTENANCE_TOPIC_IDS.has(topic.id); const completionAt = item?.lastStudiedAt ?? familyState.archivedCompletions[topic.id];
+                const item = progressMap.get(topic.id); const liveTopicStage = item?.stage ?? 0; const topicStage = progressStageFor(topic); const open = expanded === topic.id; const maintenance = MAINTENANCE_TOPIC_IDS.has(topic.id); const previouslyCompleted = !maintenance && liveTopicStage === 0 && archivedCompletedTopicIds.has(topic.id); const completionAt = item?.lastStudiedAt ?? familyState.archivedCompletions[topic.id];
                 const subjectMinutes = TOPICS.filter((candidate) => candidate.subject === topic.subject).reduce((sum, candidate) => sum + candidate.minutes, 0);
                 const workloadShare = ((topic.minutes / subjectMinutes) * 100).toFixed(1);
                 const sessions = Math.max(1, Math.ceil(topic.minutes / 45));
                 const guidance = effortGuidance(item?.bestScore ?? 0, tests.find((attempt) => attempt.topicId === topic.id)?.errorCategory);
-                return <article className="topic-row" key={topic.id}><button disabled={maintenance} className={`stage-button ${stageClass(topicStage)}`} onClick={() => updateStage(topic, topicStage === 3 ? 3 : topicStage + 1)} aria-label={maintenance ? `${topic.title} was previously completed and is in maintenance` : `Update ${topic.title}`}><span>{maintenance ? "✓" : topicStage === 0 ? "" : topicStage === 3 ? "★" : "✓"}</span></button><div className="topic-main"><div className="topic-kicker"><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><span>{topic.code}</span><span>{topic.unit}</span></div><h3>{topic.title}</h3><div className="topic-meta"><span>{importanceLabel(topic.importance)} exam priority</span><span>{topic.paper}</span><span>{Math.ceil(topic.minutes / 60 * 10) / 10}h · {sessions} session{sessions === 1 ? "" : "s"}</span><span>{workloadShare}% of subject workload</span><span>{maintenance ? "Done · past-paper maintenance" : topicStage ? guidance.effort : "Not started"}</span>{(maintenance || topicStage > 0) && <span>{completionAt ? `Completed ${fullDateTimeLabel(completionAt)}` : "Completed before reset · exact time unavailable"}</span>}{hasReviewedQuiz(topic.id) && <span>Reviewed quiz ready</span>}</div>{open && <div className="topic-detail"><div><strong>{maintenance ? "How to maintain it" : "How to complete it"}</strong><p>{maintenance ? "Do topical past-paper questions, mark them strictly, and return to teaching only if repeated errors reveal a gap." : "Learn the key idea, work through an example, practise independently, correct errors, then return for a recall check."}</p></div><div><strong>What matters in the exam</strong><p>{topic.tip}</p></div><div className="topic-links"><strong>Linked learning path</strong>{prerequisiteTopics(topic.id).length ? <p>Builds on: {prerequisiteTopics(topic.id).map((linked) => linked.title).join(" · ")}</p> : <p>No earlier foundation required.</p>}{linkedNextTopics(topic.id).length > 0 && <p>Leads to: {linkedNextTopics(topic.id).map((linked) => linked.title).join(" · ")}</p>}<button onClick={() => showFullPath(topic)}>Show full path above</button></div><div className="stuck-box"><strong>Finding this difficult?</strong><p>Choose the help that matches the problem.</p><div><button onClick={() => openPrerequisiteHelp(topic)}>I forgot an earlier idea</button><button onClick={() => openPracticeHelp(topic)}>I cannot solve questions</button><button onClick={() => openRepeatPicker(topic)}>Repeat this later</button></div>{repeatPickerTopicId === topic.id && <div className="repeat-scheduler"><label><span>Choose the repeat date</span><input type="date" min={moveDate(localDateKey(), 1)} value={repeatDateChoice} onChange={(event) => setRepeatDateChoice(event.target.value)} /></label><button onClick={() => void repeatTopicLater(topic)}>Confirm date</button><button className="repeat-cancel" onClick={() => setRepeatPickerTopicId(null)}>Cancel</button></div>}{settings[`planner.repeat.${topic.id}`] && <div className="repeat-scheduled"><span>Scheduled for {fullDateLabel(settings[`planner.repeat.${topic.id}`])}</span><button onClick={() => void undoRepeat(topic)}>Undo repeat</button></div>}</div><a href={topicPracticeUrl(topic)} target="_blank" rel="noreferrer">Open topic-specific Cambridge practice ↗</a><a href={youtubeSearchUrl(topic)} target="_blank" rel="noreferrer">Watch a selected topic lesson ↗</a></div>}</div><div className="topic-actions"><span className={`status-pill ${stageClass(topicStage)}`}>{maintenance ? "Done · Maintenance" : STAGES[topicStage]}</span>{hasReviewedQuiz(topic.id) && topicStage > 0 && <button className="quiz-row-button" onClick={() => openQuiz(topic)}>Quiz</button>}{!maintenance && topicStage > 0 && <button onClick={() => updateStage(topic, 0)} aria-label={`Reset ${topic.title} to Not started`}>Reset</button>}<button onClick={() => { setExpanded(open ? null : topic.id); setStuckTopicId(open ? null : topic.id); }}>{open ? "Close" : "Lesson help"}</button></div></article>;
+                if (previouslyCompleted) guidance.effort = "Previously completed";
+                return <article className="topic-row" key={topic.id}><button disabled={maintenance} className={`stage-button ${stageClass(topicStage)}`} onClick={() => updateStage(topic, topicStage === 3 ? 3 : topicStage + 1)} aria-label={maintenance ? `${topic.title} was previously completed and is in maintenance` : `Update ${topic.title}`}><span>{maintenance ? "✓" : topicStage === 0 ? "" : topicStage === 3 ? "★" : "✓"}</span></button><div className="topic-main"><div className="topic-kicker"><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><span>{topic.code}</span><span>{topic.unit}</span></div><h3>{topic.title}</h3><div className="topic-meta"><span>{importanceLabel(topic.importance)} exam priority</span><span>{topic.paper}</span><span>{Math.ceil(topic.minutes / 60 * 10) / 10}h · {sessions} session{sessions === 1 ? "" : "s"}</span><span>{workloadShare}% of subject workload</span><span>{maintenance ? "Done · past-paper maintenance" : topicStage ? guidance.effort : "Not started"}</span>{(maintenance || topicStage > 0) && <span>{completionAt ? `Completed ${fullDateTimeLabel(completionAt)}` : "Completed before reset · exact time unavailable"}</span>}{hasReviewedQuiz(topic.id) && <span>Reviewed quiz ready</span>}</div>{open && <div className="topic-detail"><div><strong>{maintenance ? "How to maintain it" : "How to complete it"}</strong><p>{maintenance ? "Do topical past-paper questions, mark them strictly, and return to teaching only if repeated errors reveal a gap." : "Learn the key idea, work through an example, practise independently, correct errors, then return for a recall check."}</p></div><div><strong>What matters in the exam</strong><p>{topic.tip}</p></div><div className="topic-links"><strong>Linked learning path</strong>{prerequisiteTopics(topic.id).length ? <p>Builds on: {prerequisiteTopics(topic.id).map((linked) => linked.title).join(" · ")}</p> : <p>No earlier foundation required.</p>}{linkedNextTopics(topic.id).length > 0 && <p>Leads to: {linkedNextTopics(topic.id).map((linked) => linked.title).join(" · ")}</p>}<button onClick={() => showFullPath(topic)}>Show full path above</button></div><div className="stuck-box"><strong>Finding this difficult?</strong><p>Choose the help that matches the problem.</p><div><button onClick={() => openPrerequisiteHelp(topic)}>I forgot an earlier idea</button><button onClick={() => openPracticeHelp(topic)}>I cannot solve questions</button><button onClick={() => openRepeatPicker(topic)}>Repeat this later</button></div>{repeatPickerTopicId === topic.id && <div className="repeat-scheduler"><label><span>Choose the repeat date</span><input type="date" min={moveDate(localDateKey(), 1)} value={repeatDateChoice} onChange={(event) => setRepeatDateChoice(event.target.value)} /></label><button onClick={() => void repeatTopicLater(topic)}>Confirm date</button><button className="repeat-cancel" onClick={() => setRepeatPickerTopicId(null)}>Cancel</button></div>}{settings[`planner.repeat.${topic.id}`] && <div className="repeat-scheduled"><span>Scheduled for {fullDateLabel(settings[`planner.repeat.${topic.id}`])}</span><button onClick={() => void undoRepeat(topic)}>Undo repeat</button></div>}</div><a href={topicPracticeUrl(topic)} target="_blank" rel="noreferrer">Open topic-specific Cambridge practice ↗</a><a href={youtubeSearchUrl(topic)} target="_blank" rel="noreferrer">Watch a selected topic lesson ↗</a></div>}</div><div className="topic-actions"><span className={`status-pill ${stageClass(topicStage)}`}>{maintenance ? "Done · Maintenance" : previouslyCompleted ? "Previously completed" : STAGES[topicStage]}</span>{hasReviewedQuiz(topic.id) && topicStage > 0 && <button className="quiz-row-button" onClick={() => openQuiz(topic)}>Quiz</button>}{!maintenance && topicStage > 0 && <button onClick={() => updateStage(topic, 0)} aria-label={`Reset ${topic.title} to Not started`}>Reset</button>}<button onClick={() => { setExpanded(open ? null : topic.id); setStuckTopicId(open ? null : topic.id); }}>{open ? "Close" : "Lesson help"}</button></div></article>;
               })}
               {filteredTopics.length === 0 && <EmptyMessage>No topics match these filters.</EmptyMessage>}
             </div>
