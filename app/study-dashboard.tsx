@@ -56,7 +56,7 @@ const TAB_GUIDES: Record<View, TabGuideContent> = {
   },
   syllabus: {
     purpose: "Maps every Cambridge topic, its workload, importance, paper, stage and learning relationships.",
-    use: "Filter by subject or stage, select a topic, check prerequisites, then open Study this topic or Lesson help.",
+    use: "Filter by subject and choose All, Completed, Completed—not yet secure, Secure, Partially completed, Remaining or Maintenance.",
     connected: "Calendar lessons, prerequisite paths, Daily Checks, weekend evidence and confident-topic maintenance.",
     updates: "Every topic remains visible. Completed topics show their completion record; Secure remains a separate evidence-based status.",
   },
@@ -458,7 +458,7 @@ export default function StudyDashboard({
   const [message, setMessage] = useState("");
   const [greeting, setGreeting] = useState("Welcome");
   const [subject, setSubject] = useState<SubjectName | "All">("All");
-  const [stageFilter, setStageFilter] = useState("All stages");
+  const [stageFilter, setStageFilter] = useState("All topics");
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [chosenTopicId, setChosenTopicId] = useState<string>(TOPICS.find((topic) => !MAINTENANCE_TOPIC_IDS.has(topic.id))?.id ?? TOPICS[0].id);
@@ -612,6 +612,17 @@ export default function StudyDashboard({
     () => buildPlanner(progressMap, settings, todayKey),
     [progressMap, settings, todayKey],
   );
+  const topicTaskCompletion = useMemo(() => {
+    const completion = new Map<string, { completed: number; total: number }>();
+    planner.tasksById.forEach((task) => {
+      if (task.kind !== "syllabus") return;
+      const current = completion.get(task.topic.id) ?? { completed: 0, total: 0 };
+      current.total += 1;
+      if (planner.completedTaskIds.has(task.id)) current.completed += 1;
+      completion.set(task.topic.id, current);
+    });
+    return completion;
+  }, [planner.completedTaskIds, planner.tasksById]);
   const todayTasks = planner.effective.get(todayKey) ?? [];
   const todayRemainingTasks = todayTasks.filter((task) => !planner.completedTaskIds.has(task.id));
   const todayRemainingMinutes = todayRemainingTasks.reduce((sum, task) => sum + plannedTaskMinutes(task), 0);
@@ -709,13 +720,21 @@ export default function StudyDashboard({
       const topicStage = progressMap.get(topic.id)?.stage ?? 0;
       const matchesSubject = subject === "All" || topic.subject === subject;
       const maintenance = MAINTENANCE_TOPIC_IDS.has(topic.id);
-      const matchesStage = stageFilter === "Active syllabus" ? !maintenance :
-        stageFilter === "Maintenance" ? maintenance : stageFilter === "All stages" ||
-        (stageFilter === "Revision due" ? isRevisionDue(progressMap.get(topic.id)) : STAGES[topicStage] === stageFilter);
+      const taskCompletion = topicTaskCompletion.get(topic.id) ?? { completed: 0, total: 0 };
+      const completed = maintenance || topicStage > 0 || (taskCompletion.total > 0 && taskCompletion.completed === taskCompletion.total);
+      const partial = !completed && taskCompletion.completed > 0;
+      const matchesStage = stageFilter === "All topics" ||
+        (stageFilter === "Completed" ? completed :
+        stageFilter === "Completed — not yet secure" ? completed && topicStage < 3 :
+        stageFilter === "Secure" ? topicStage === 3 :
+        stageFilter === "Partially completed" ? partial :
+        stageFilter === "Remaining" ? !completed && !partial :
+        stageFilter === "Maintenance" ? maintenance :
+        stageFilter === "Revision due" ? isRevisionDue(progressMap.get(topic.id)) : STAGES[topicStage] === stageFilter);
       const matchesQuery = !query || `${topic.code} ${topic.unit} ${topic.title}`.toLowerCase().includes(query);
       return matchesSubject && matchesStage && matchesQuery;
     });
-  }, [progressMap, search, stageFilter, subject]);
+  }, [progressMap, search, stageFilter, subject, topicTaskCompletion]);
 
   const chosenTopic = TOPICS.find((topic) => topic.id === chosenTopicId) ?? TOPICS[0];
   const chosenPrerequisites = prerequisiteTopics(chosenTopic.id);
@@ -727,7 +746,7 @@ export default function StudyDashboard({
   function revealTopic(topic: Topic) {
     setSubject(topic.subject);
     setSearch(topic.code);
-    setStageFilter(MAINTENANCE_TOPIC_IDS.has(topic.id) ? "Maintenance" : "Active syllabus");
+    setStageFilter(MAINTENANCE_TOPIC_IDS.has(topic.id) ? "Maintenance" : "All topics");
     setExpanded(topic.id);
   }
 
@@ -1140,7 +1159,7 @@ export default function StudyDashboard({
               </div>
             </div>
             <div className="metrics-row compact"><article><span>Coverage</span><strong>{stats.coverage}%</strong><small>{stats.learned}/{stats.total} topics</small></article><article><span>Practising</span><strong>{stats.practice}%</strong><small>{stats.practised} topics</small></article><article><span>Secure</span><strong>{stats.mastery}%</strong><small>{stats.mastered} topics</small></article><article><span>Remaining</span><strong>{Math.ceil(stats.remainingMinutes / 60)}h</strong><small>weighted work to Secure</small></article></div>
-            <div className="filter-panel"><div className="subject-tabs"><button className={subject === "All" ? "active" : ""} onClick={() => setSubject("All")}>All <span>{TOPICS.length}</span></button>{SUBJECTS.map((item) => <button key={item} className={subject === item ? "active" : ""} onClick={() => setSubject(item)}>{SUBJECT_META[item].short} <span>{TOPICS.filter((topic) => topic.subject === item).length}</span></button>)}</div><div className="filter-controls"><label><span className="sr-only">Search syllabus</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search code, unit or topic" /></label><select value={stageFilter} onChange={(event) => setStageFilter(event.target.value)} aria-label="Filter by status"><option>Active syllabus</option><option>Maintenance</option><option>All stages</option>{STAGES.map((item) => <option key={item}>{item}</option>)}<option>Revision due</option></select><strong>{filteredTopics.length} topics</strong></div></div>
+            <div className="filter-panel"><div className="subject-tabs"><button className={subject === "All" ? "active" : ""} onClick={() => setSubject("All")}>All <span>{TOPICS.length}</span></button>{SUBJECTS.map((item) => <button key={item} className={subject === item ? "active" : ""} onClick={() => setSubject(item)}>{SUBJECT_META[item].short} <span>{TOPICS.filter((topic) => topic.subject === item).length}</span></button>)}</div><div className="filter-controls"><label><span className="sr-only">Search syllabus</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search code, unit or topic" /></label><select value={stageFilter} onChange={(event) => setStageFilter(event.target.value)} aria-label="Filter syllabus completion"><option>All topics</option><option>Completed</option><option>Completed — not yet secure</option><option>Secure</option><option>Partially completed</option><option>Remaining</option><option>Maintenance</option><option>Revision due</option></select><strong>{filteredTopics.length} topics</strong></div></div>
             <div className="topic-list">
               {filteredTopics.map((topic) => {
                 const item = progressMap.get(topic.id); const topicStage = item?.stage ?? 0; const open = expanded === topic.id; const maintenance = MAINTENANCE_TOPIC_IDS.has(topic.id); const completionAt = item?.lastStudiedAt ?? familyState.archivedCompletions[topic.id];
