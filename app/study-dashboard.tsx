@@ -32,6 +32,84 @@ import type { DailyQuizResultPayload } from "./daily-quiz-model";
 import { MAINTENANCE_TOPIC_IDS, STARTER_LESSONS, sundayLesson, topicLesson, topicLessonCount, type GuidedLesson } from "./lesson-plan";
 
 type View = "today" | "calendar" | "syllabus" | "dates" | "quizzes" | "tests" | "plan" | "parent" | "help";
+
+type TabGuideContent = {
+  purpose: string;
+  use: string;
+  connected: string;
+  updates: string;
+};
+
+const TAB_GUIDES: Record<View, TabGuideContent> = {
+  today: {
+    purpose: "Shows only the work Talha should complete today: no more than two principal subjects.",
+    use: "Open each task, follow its method and practice steps, complete the 20-minute Daily Check, then tick the task.",
+    connected: "Calendar assignments, syllabus topics, Daily Check results, reminders and the rescheduling engine.",
+    updates: "Checkboxes and checks update it immediately. Unticked missed work is carried forward automatically.",
+  },
+  calendar: {
+    purpose: "Shows the complete dated roadmap, daily workload and completed-versus-remaining syllabus.",
+    use: "Select a date to see its two assigned subjects, time, learning objective, method, practice and recall.",
+    connected: "Today, syllabus progress, repeat-later dates, task completion and the hidden Parent View planning engine.",
+    updates: "Recalculates after a task is completed, missed, repeated or moved; later dates shift without filling today with future work.",
+  },
+  syllabus: {
+    purpose: "Maps every Cambridge topic, its workload, importance, paper, stage and learning relationships.",
+    use: "Filter by subject or stage, select a topic, check prerequisites, then open Study this topic or Lesson help.",
+    connected: "Calendar lessons, prerequisite paths, Daily Checks, weekend evidence and confident-topic maintenance.",
+    updates: "Stages change when learning or evidence is recorded. A topic becomes Secure only when its evidence rules are met.",
+  },
+  dates: {
+    purpose: "Keeps every Cambridge examination paper and countdown visible in one place.",
+    use: "Review paper dates and durations regularly, especially when deciding revision and past-paper priorities.",
+    connected: "The exam window, calendar target and Parent View planning calculations.",
+    updates: "Days-left counts update automatically each day. Examination dates change only after a verified timetable update.",
+  },
+  tests: {
+    purpose: "Records one-hour, whole-topic weekend assessments and turns results into improvement guidance.",
+    use: "Complete the assigned paper under timed conditions, mark it strictly, then record marks, time and the main error.",
+    connected: "Syllabus evidence, Secure status, error tracking, revision scheduling and Parent View.",
+    updates: "Updates immediately after a marked attempt is saved; weak areas return for correction and later re-testing.",
+  },
+  parent: {
+    purpose: "Gives the parent oversight of consistency, coverage, evidence, recurring errors and quiz-bank publishing.",
+    use: "Review weekly activity and support needs; use the Google Sheet control only for reviewed, Approved questions.",
+    connected: "All LMS progress and assessment records, the D1 family database and the controlled Google Sheet quiz bank.",
+    updates: "Refreshes after Talha records activity. Google Sheet questions update only when Validate and sync approved rows succeeds.",
+  },
+  help: {
+    purpose: "Explains the complete self-study system for Talha and the parent.",
+    use: "Read the numbered sections once, then return whenever a button, status or study routine is unclear.",
+    connected: "Every learner tab, Parent View, reminders, assessment rules and troubleshooting guidance.",
+    updates: "The manual is updated whenever an LMS feature or study rule changes.",
+  },
+  quizzes: {
+    purpose: "Legacy topic-quiz view retained internally while Daily Checks replace it in Talha's navigation.",
+    use: "Use only when opened from an existing topic record.",
+    connected: "Syllabus topics and stored quiz attempts.",
+    updates: "Updates when a legacy topic quiz is submitted.",
+  },
+  plan: {
+    purpose: "Internal adaptive-planning view retained for Parent View calculations.",
+    use: "Talha should use Today and Calendar instead of this internal view.",
+    connected: "Calendar capacity, remaining syllabus workload and target dates.",
+    updates: "Recalculates whenever work, time settings or target dates change.",
+  },
+};
+
+function TabGuide({ view }: { view: View }) {
+  const guide = TAB_GUIDES[view];
+  return <details className="tab-guide panel" open>
+    <summary><span>About this tab</span><small>Purpose, use, connections and updates</small></summary>
+    <div className="tab-guide-grid">
+      <article><strong>What it is for</strong><p>{guide.purpose}</p></article>
+      <article><strong>How it works</strong><p>{guide.use}</p></article>
+      <article><strong>Connected to</strong><p>{guide.connected}</p></article>
+      <article><strong>How it updates</strong><p>{guide.updates}</p></article>
+    </div>
+  </details>;
+}
+
 type ProgressItem = {
   topicId: string;
   stage: number;
@@ -945,6 +1023,7 @@ export default function StudyDashboard({
         </header>
 
         {message && <div className={`toast ${message.includes("not") || message.includes("valid") ? "error" : ""}`} role="status">{message}<button onClick={() => setMessage("")} aria-label="Dismiss">×</button></div>}
+        <TabGuide view={view} />
         {view === "today" && (
           <>
             <section className="hero-panel">
