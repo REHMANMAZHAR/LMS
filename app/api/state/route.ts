@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { activity, assessmentAttempts, progress, settings } from "@/db/schema";
+import { activity, assessmentAttempts, progress, settings, systemBackups } from "@/db/schema";
 import { requireFamilySession } from "@/app/family-auth";
 import { SUBJECTS, TOPICS, type SubjectName } from "@/app/data";
 import {
@@ -9,6 +9,7 @@ import {
   evidenceForTopic,
   subjectThreshold,
 } from "@/app/learning-model";
+import { MAINTENANCE_TOPIC_IDS } from "@/app/lesson-plan";
 
 const FAMILY_ID = "talha-family";
 const SETTING_KEYS = new Set([
@@ -42,7 +43,7 @@ export async function GET() {
   try {
     await requireApiUser();
     const db = await getDb();
-    const [progressRows, settingRows, activityRows, attemptRows] = await Promise.all([
+    const [progressRows, settingRows, activityRows, attemptRows, backupRows] = await Promise.all([
       db.select().from(progress).where(eq(progress.familyId, FAMILY_ID)),
       db.select().from(settings).where(eq(settings.familyId, FAMILY_ID)),
       db
@@ -57,13 +58,37 @@ export async function GET() {
         .where(eq(assessmentAttempts.familyId, FAMILY_ID))
         .orderBy(desc(assessmentAttempts.createdAt), desc(assessmentAttempts.id))
         .limit(240),
+      db
+        .select()
+        .from(systemBackups)
+        .where(eq(systemBackups.familyId, FAMILY_ID))
+        .orderBy(desc(systemBackups.createdAt), desc(systemBackups.id))
+        .limit(1),
     ]);
+
+    const archivedCompletions: Record<string, string> = {};
+    try {
+      const snapshot = backupRows[0]?.snapshotJson ? JSON.parse(backupRows[0].snapshotJson) as {
+        progress?: Array<{ topicId?: string; lastStudiedAt?: string | null }>;
+        activity?: Array<{ topicId?: string | null; createdAt?: string }>;
+      } : null;
+      for (const topicId of MAINTENANCE_TOPIC_IDS) {
+        const candidates = [
+          ...(snapshot?.progress ?? []).filter((item) => item.topicId === topicId).map((item) => item.lastStudiedAt ?? ""),
+          ...(snapshot?.activity ?? []).filter((item) => item.topicId === topicId).map((item) => item.createdAt ?? ""),
+        ].filter(Boolean).sort();
+        if (candidates.length) archivedCompletions[topicId] = candidates[candidates.length - 1];
+      }
+    } catch {
+      // A malformed historical snapshot must never prevent the live LMS from loading.
+    }
 
     return Response.json({
       progress: progressRows,
       settings: Object.fromEntries(settingRows.map((row) => [row.key, row.value])),
       activity: activityRows,
       attempts: attemptRows,
+      archivedCompletions,
     });
   } catch (error) {
     return errorResponse(error);
@@ -130,22 +155,29 @@ export async function PATCH(request: Request) {
         return Response.json({ error: "Invalid planner task." }, { status: 400 });
       }
       const now = new Date().toISOString();
-      await db
-        .insert(settings)
-        .values({ familyId: FAMILY_ID, key: `planner.done.${taskId}`, value: checked ? completedDate : "", updatedAt: now })
-        .onConflictDoUpdate({
-          target: [settings.familyId, settings.key],
-          set: { value: checked ? completedDate : "", updatedAt: now },
-        });
-      await db.insert(activity).values({
-        familyId: FAMILY_ID,
-        topicId,
-        subject,
-        kind: checked ? "planner_task" : "planner_uncheck",
-        minutes: checked ? minutes : -minutes,
-        note: checked ? `Daily planner task completed by ${user.displayName}` : `Daily planner task reopened by ${user.displayName}`,
-        createdAt: now,
-      });
+      await db.batch([
+        db.insert(settings)
+          .values({ familyId: FAMILY_ID, key: `planner.done.${taskId}`, value: checked ? completedDate : "", updatedAt: now })
+          .onConflictDoUpdate({
+            target: [settings.familyId, settings.key],
+            set: { value: checked ? completedDate : "", updatedAt: now },
+          }),
+        db.insert(settings)
+          .values({ familyId: FAMILY_ID, key: `planner.doneAt.${taskId}`, value: checked ? now : "", updatedAt: now })
+          .onConflictDoUpdate({
+            target: [settings.familyId, settings.key],
+            set: { value: checked ? now : "", updatedAt: now },
+          }),
+        db.insert(activity).values({
+          familyId: FAMILY_ID,
+          topicId,
+          subject,
+          kind: checked ? "planner_task" : "planner_uncheck",
+          minutes: checked ? minutes : -minutes,
+          note: checked ? `Task ${taskId} completed by ${user.displayName}` : `Task ${taskId} reopened by ${user.displayName}`,
+          createdAt: now,
+        }),
+      ]);
       return Response.json({ ok: true, updatedAt: now });
     }
 
