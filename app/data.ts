@@ -543,3 +543,9 @@ export const STAGES = ["Not started", "Learning", "Practising", "Secure"] as con
 export function youtubeSearchUrl(topic: Topic) {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(topic.resourceQuery)}`;
 }
+
+/** A safe fallback while a reviewed internal Daily Check is being authored for this exact lesson. */
+export function topicPracticeUrl(topic: Topic) {
+  const query = `Cambridge IGCSE ${SUBJECT_META[topic.subject].code} ${topic.title} topical questions mark scheme`;
+  return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+}
