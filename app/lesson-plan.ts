@@ -13,6 +13,9 @@ export type GuidedLesson = {
 
 type StarterLesson = GuidedLesson & { topicId: string };
 
+/** Changing this starts a clean, archived learner plan and prevents stale task/quiz IDs from leaking in. */
+export const ACTIVE_PLAN_VERSION = "talha-2026-09-15-v2";
+
 const method = "Learn 60 min · concise notes 25 min · guided work 30 min · independent exam practice 45 min · closed-book recall and correction 20 min";
 
 function lesson(topicId: string, title: string, objective: string, keyPoints: string, practice: string, recall: string): StarterLesson {
