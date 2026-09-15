@@ -31,7 +31,7 @@ import { hasDailyQuiz } from "./daily-quiz-bank";
 import type { DailyQuizResultPayload } from "./daily-quiz-model";
 import { MAINTENANCE_TOPIC_IDS, STARTER_LESSONS, sundayLesson, topicLesson, topicLessonCount, type GuidedLesson } from "./lesson-plan";
 
-type View = "today" | "calendar" | "syllabus" | "dates" | "quizzes" | "tests" | "plan" | "parent";
+type View = "today" | "calendar" | "syllabus" | "dates" | "quizzes" | "tests" | "plan" | "parent" | "help";
 type ProgressItem = {
   topicId: string;
   stage: number;
@@ -315,12 +315,11 @@ function buildPlanner(
 
   const completedToday = canonicalTasks.some((task) => rawDoneDate(task.id) === today);
   let cursor = today < startDate ? startDate : today;
-  let remainingToday = completedToday ? Math.max(0, 2 - (effective.get(today)?.length ?? 0)) : 2;
   incomplete.forEach((task) => {
     const repeatDate = settings[`planner.repeat.${task.topic.id}`];
     if (repeatDate && repeatDate >= today) cursor = repeatDate;
     if (completedToday && cursor === today && task.originalDate > today) cursor = moveDate(today, 1);
-    while ((effective.get(cursor)?.length ?? 0) >= (cursor === today ? remainingToday + (effective.get(today)?.length ?? 0) : 2)) cursor = moveDate(cursor, 1);
+    while ((effective.get(cursor)?.length ?? 0) >= 2) cursor = moveDate(cursor, 1);
     const moved = { ...task, scheduledDate: cursor, carriedForward: task.originalDate < cursor };
     effective.set(cursor, [...(effective.get(cursor) ?? []), moved]);
   });
@@ -930,7 +929,7 @@ export default function StudyDashboard({
           {([
             ["today", "Today", "01"], ["calendar", "Calendar", "02"],
             ["syllabus", "Syllabus", "03"], ["dates", "Important Dates", "04"],
-            ["tests", "Weekend Assessments", "05"], ["parent", "Parent view", "06"],
+            ["tests", "Weekend Assessments", "05"], ["parent", "Parent view", "06"], ["help", "How it works", "07"],
           ] as Array<[View, string, string]>).map(([key, label, number]) => (
             <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key)}><span>{number}</span>{label}</button>
           ))}
@@ -941,7 +940,7 @@ export default function StudyDashboard({
 
       <main className="main-area">
         <header className="topbar">
-          <div className="topbar-title"><span className="eyebrow">CAMBRIDGE IGCSE · FOUR SUBJECTS</span><h1>{view === "parent" ? "Parent overview" : view === "calendar" ? "Daily study calendar" : view === "syllabus" ? "Syllabus map" : view === "dates" ? "Important dates" : view === "quizzes" ? "Topic quizzes" : view === "tests" ? "Weekend assessments" : view === "plan" ? "Adaptive study plan" : `${greeting}, Talha`}</h1><div className="topbar-exam-countdown"><span>Exam: {fullDateLabel(settings.examDate)}</span><strong>{examDaysLeft} days left</strong></div></div>
+          <div className="topbar-title"><span className="eyebrow">CAMBRIDGE IGCSE · FOUR SUBJECTS</span><h1>{view === "parent" ? "Parent overview" : view === "calendar" ? "Daily study calendar" : view === "syllabus" ? "Syllabus map" : view === "help" ? "How the LMS works" : view === "dates" ? "Important dates" : view === "quizzes" ? "Topic quizzes" : view === "tests" ? "Weekend assessments" : view === "plan" ? "Adaptive study plan" : `${greeting}, Talha`}</h1><div className="topbar-exam-countdown"><span>Exam: {fullDateLabel(settings.examDate)}</span><strong>{examDaysLeft} days left</strong></div></div>
           <div className="account-pill"><span>{displayName.slice(0, 1).toUpperCase()}</span><div><strong>{displayName}</strong><small>{lastSynced ? `Synced ${lastSynced.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : view === "parent" ? "Parent mode" : "Secure family access"}</small></div></div>
         </header>
 
@@ -949,7 +948,7 @@ export default function StudyDashboard({
         {view === "today" && (
           <>
             <section className="hero-panel">
-              <div><span className="eyebrow light">TODAY&apos;S DIRECTION</span><h2>One clear step.<br />Then the next.</h2><p>{stats.mastered} topics are secure and {TOPICS.filter((topic) => isRevisionDue(progressMap.get(topic.id))).length} recalls are due. Complete today&apos;s focused steps to keep the full roadmap on schedule.</p><div className="hero-buttons"><button className="hero-action" onClick={() => setView("plan")}>See complete roadmap <span>→</span></button><button className="hero-secondary" onClick={() => void enableReminders()}>{remindersEnabled ? "Reminders enabled" : "Enable reminders"}</button></div></div>
+              <div><span className="eyebrow light">TODAY&apos;S DIRECTION</span><h2>One clear step.<br />Then the next.</h2><p>{stats.mastered} topics are secure and {TOPICS.filter((topic) => isRevisionDue(progressMap.get(topic.id))).length} recalls are due. Complete today&apos;s focused steps to keep the full roadmap on schedule.</p><div className="hero-buttons"><button className="hero-action" onClick={() => setView("calendar")}>See complete roadmap <span>→</span></button><button className="hero-secondary" onClick={() => void enableReminders()}>{remindersEnabled ? "Reminders enabled" : "Enable reminders"}</button></div></div>
               <StatRing value={stats.readiness} label="evidence readiness" />
             </section>
             <section className="section-block">
@@ -1091,6 +1090,44 @@ export default function StudyDashboard({
             <div className="panel roadmap-panel"><div className="section-heading"><div><span className="eyebrow">COMPLETE ROADMAP</span><h2>Every subject, hour and next step</h2></div><span className="quiet">Progress is weighted by human study time—not topic count</span></div><div className="roadmap-phases"><article className="active"><span>1</span><div><strong>Learn the syllabus</strong><small>Now → {fullDateLabel(settings.targetDate)}</small></div></article><article><span>2</span><div><strong>Topical exam practice</strong><small>After first coverage</small></div></article><article><span>3</span><div><strong>Mixed timed papers</strong><small>Build speed and application</small></div></article><article><span>4</span><div><strong>Final revision</strong><small>Weak areas and full mocks</small></div></article></div><div className="roadmap-grid">{roadmapSubjects.map((item) => <article key={item.subject} className={subjectClass(item.subject)}><div className="roadmap-title"><i style={{ background: SUBJECT_META[item.subject].color }} /><div><strong>{item.subject}</strong><small>{SUBJECT_META[item.subject].code}</small></div><b>{item.progress}%</b></div><div className="roadmap-bar"><span style={{ width: `${item.progress}%` }} /></div><div className="roadmap-numbers"><span><b>{Math.ceil(item.totalMinutes / 60)}h</b> total</span><span><b>{Math.ceil(item.remainingMinutes / 60)}h</b> remaining</span></div><p>Next: <strong>{item.nextTopic ? `${item.nextTopic.code} · ${item.nextTopic.title}` : "Syllabus learning complete"}</strong></p><button onClick={() => { if (item.nextTopic) { revealTopic(item.nextTopic); setView("syllabus"); } }}>Open next topic</button></article>)}</div></div>
             <div className="panel subject-strategy"><div className="section-heading"><div><span className="eyebrow">CURRENT STUDY ALLOCATION</span><h2>Time follows present learning needs</h2></div><span className="quiet">Rebalanced as real evidence is recorded</span></div><div className="strategy-grid">{SUBJECTS.map((item) => { const profile = SUBJECT_PROFILES[item]; return <article key={item}><div className="strategy-title"><i style={{ background: SUBJECT_META[item].color }} /><strong>{item}</strong><span>{profile.weeklyShare}% of study time</span></div><p><b>{roadmapSubjects.find((row) => row.subject === item)?.progress ?? 0}% workload completed</b></p><p>{profile.diagnostic}</p><small>{profile.examHabit}</small></article>; })}</div></div>
             <div className="panel method-panel"><span className="eyebrow">INDEPENDENT STUDY METHOD</span><h2>One lesson, five moves</h2><ol><li><span>01</span><div><strong>Recall</strong><p>Retrieve yesterday&apos;s and due material without notes.</p></div></li><li><span>02</span><div><strong>Learn</strong><p>Understand one exact syllabus objective or worked method.</p></div></li><li><span>03</span><div><strong>Practise</strong><p>Answer marked exam questions without looking at solutions.</p></div></li><li><span>04</span><div><strong>Correct</strong><p>Identify what was missing and write the corrected response.</p></div></li><li><span>05</span><div><strong>Re-test</strong><p>Return on another date to make sure the learning remains.</p></div></li></ol></div>
+          </section>
+        )}
+
+        {view === "help" && (
+          <section className="section-block no-top">
+            <div className="panel">
+              <span className="eyebrow">TALHA&apos;S SELF-STUDY MANUAL</span>
+              <h2>What this LMS does</h2>
+              <p>This is Talha&apos;s daily guide for completing four Cambridge IGCSE subjects without attending school. It turns the 22-week syllabus into dated lessons, keeps large topics in manageable sessions, carries missed work forward, checks understanding, and shows the parent where support is needed. It guides study; it does not replace Cambridge textbooks, official past papers, mark schemes or qualified help when a concept remains unclear.</p>
+            </div>
+
+            <div className="strategy-grid">
+              <article className="panel"><span className="eyebrow">01 · TODAY</span><h2>Follow only today&apos;s two subjects</h2><p>Open <b>Today</b> and complete the two displayed subject tasks in order. A normal weekday subject block is approximately three hours. Use the method, practice and recall instructions shown inside the task.</p><p><b>Tick a task only after doing the assigned work.</b> Completing one task must not bring tomorrow&apos;s lesson into the same day. The remaining minutes and task count reduce immediately.</p></article>
+              <article className="panel"><span className="eyebrow">02 · DAILY CHECK</span><h2>Prove the lesson for 20 minutes</h2><p>After each weekday subject task, open its Daily Check. Work without notes first. Submit the check to see the missing ideas and the effort needed next.</p><p><b>Ready to continue</b> means proceed on schedule. <b>More practice needed</b> means correct errors and retry. <b>Repeat foundation</b> means revisit the explanation or prerequisite before moving independently.</p></article>
+              <article className="panel"><span className="eyebrow">03 · CALENDAR</span><h2>See the plan by date</h2><p>Select any date to see its assigned tasks. Each date should contain no more than two principal subjects. The small number on a calendar day shows completed tasks against assigned tasks.</p><p>If a day or subject is missed, leave it unticked. The LMS carries unfinished work forward and recalculates the later timeline; it must not erase or silently mark the work complete.</p></article>
+              <article className="panel"><span className="eyebrow">04 · SYLLABUS</span><h2>Understand the complete learning path</h2><p>Use <b>Syllabus</b> to browse every topic, estimated time, paper, importance and current learning stage. Select a topic to see earlier foundations and later linked topics.</p><p><b>Not started → Learning → Practising → Secure.</b> “Secure” requires evidence, not simply reading. Talha&apos;s confident topics stay in the past-paper maintenance pool instead of being retaught.</p></article>
+              <article className="panel"><span className="eyebrow">05 · IMPORTANT DATES</span><h2>Know every examination deadline</h2><p>This tab lists each Cambridge paper, duration and days remaining. Use it to understand urgency; the calendar remains the source of today&apos;s work.</p></article>
+              <article className="panel"><span className="eyebrow">06 · WEEKEND ASSESSMENTS</span><h2>Test a complete topic for one hour</h2><p>At weekends, complete the assigned whole-topic assessment under timed conditions. Mark it using the correct mark scheme, then record marks, time and the main error type.</p><p>The LMS reports effort and improvement actions rather than displaying old school grades. A strong result still returns later for retention.</p></article>
+              <article className="panel"><span className="eyebrow">07 · DIFFICULTY & REPEAT</span><h2>Use help without abandoning the topic</h2><p>Open Lesson Help when stuck. Use the prerequisite path if an earlier idea is missing, practise a simpler example when questions cannot be solved, or choose <b>Repeat later</b> and select a date.</p><p>If Repeat later was selected by mistake, use Reset/undo before choosing another date.</p></article>
+              <article className="panel"><span className="eyebrow">08 · REMINDERS</span><h2>Build a dependable routine</h2><p>Select <b>Enable reminders</b> and allow browser notifications. Keep a consistent start time. Device or browser restrictions can prevent notifications, so the Today screen remains the authoritative checklist.</p></article>
+            </div>
+
+            <div className="panel method-panel">
+              <span className="eyebrow">THE DAILY STUDY ROUTINE</span><h2>One subject block, five moves</h2>
+              <ol>
+                <li><span>01</span><div><strong>Recall</strong><p>Start closed-book: retrieve yesterday&apos;s key ideas.</p></div></li>
+                <li><span>02</span><div><strong>Learn</strong><p>Study the exact objective and make concise notes.</p></div></li>
+                <li><span>03</span><div><strong>Practise</strong><p>Complete guided examples, then independent Cambridge-style questions.</p></div></li>
+                <li><span>04</span><div><strong>Correct</strong><p>Mark carefully and rewrite every weak answer or calculation.</p></div></li>
+                <li><span>05</span><div><strong>Check</strong><p>Complete the 20-minute Daily Check and follow its effort guidance.</p></div></li>
+              </ol>
+            </div>
+
+            <div className="panel">
+              <span className="eyebrow">FOR THE PARENT</span><h2>How to use Parent View</h2>
+              <p>Parent View shows syllabus coverage, secure evidence, study consistency, overdue recall, recurring errors and recent Daily Check guidance. Use the Google Sheet editor only to prepare reviewed questions; publish only rows marked Approved. Before any major reset, download a progress backup and use the archive-first reset process.</p>
+              <p><b>When something looks wrong:</b> do not tick extra tasks to clear them. Refresh once, sign out and back in, and take a screenshot showing the selected date and task count. The LMS should show no more than two principal tasks on a date.</p>
+            </div>
           </section>
         )}
 
