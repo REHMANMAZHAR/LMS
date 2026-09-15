@@ -70,12 +70,22 @@ export async function GET() {
     try {
       const snapshot = backupRows[0]?.snapshotJson ? JSON.parse(backupRows[0].snapshotJson) as {
         progress?: Array<{ topicId?: string; lastStudiedAt?: string | null }>;
-        activity?: Array<{ topicId?: string | null; createdAt?: string }>;
+        activity?: Array<{ topicId?: string | null; kind?: string; createdAt?: string }>;
+        assessmentAttempts?: Array<{ topicId?: string | null; createdAt?: string }>;
       } : null;
-      for (const topicId of MAINTENANCE_TOPIC_IDS) {
+      const trustworthyTopicIds = new Set<string>(MAINTENANCE_TOPIC_IDS);
+      (snapshot?.activity ?? [])
+        .filter((item) => item.kind === "planner_task" && item.topicId)
+        .forEach((item) => trustworthyTopicIds.add(item.topicId!));
+      (snapshot?.assessmentAttempts ?? [])
+        .filter((item) => item.topicId)
+        .forEach((item) => trustworthyTopicIds.add(item.topicId!));
+      for (const topicId of trustworthyTopicIds) {
+        const maintenance = MAINTENANCE_TOPIC_IDS.has(topicId);
         const candidates = [
-          ...(snapshot?.progress ?? []).filter((item) => item.topicId === topicId).map((item) => item.lastStudiedAt ?? ""),
-          ...(snapshot?.activity ?? []).filter((item) => item.topicId === topicId).map((item) => item.createdAt ?? ""),
+          ...(maintenance ? (snapshot?.progress ?? []).filter((item) => item.topicId === topicId).map((item) => item.lastStudiedAt ?? "") : []),
+          ...(snapshot?.activity ?? []).filter((item) => item.topicId === topicId && (maintenance || item.kind === "planner_task")).map((item) => item.createdAt ?? ""),
+          ...(snapshot?.assessmentAttempts ?? []).filter((item) => item.topicId === topicId).map((item) => item.createdAt ?? ""),
         ].filter(Boolean).sort();
         if (candidates.length) archivedCompletions[topicId] = candidates[candidates.length - 1];
       }
