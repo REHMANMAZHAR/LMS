@@ -10,6 +10,7 @@ import {
   Topic,
   linkedNextTopics,
   prerequisiteTopics,
+  topicPracticeUrl,
   youtubeSearchUrl,
 } from "./data";
 import {
@@ -29,7 +30,7 @@ import { REVIEWED_QUIZ_TOPIC_IDS, hasReviewedQuiz, type QuizResultPayload } from
 import DailyQuizView from "./daily-quiz-view";
 import { hasDailyQuiz } from "./daily-quiz-bank";
 import type { DailyQuizResultPayload } from "./daily-quiz-model";
-import { MAINTENANCE_TOPIC_IDS, STARTER_LESSONS, sundayLesson, topicLesson, topicLessonCount, type GuidedLesson } from "./lesson-plan";
+import { ACTIVE_PLAN_VERSION, MAINTENANCE_TOPIC_IDS, STARTER_LESSONS, sundayLesson, topicLesson, topicLessonCount, type GuidedLesson } from "./lesson-plan";
 
 type View = "today" | "calendar" | "syllabus" | "dates" | "quizzes" | "tests" | "plan" | "parent" | "help";
 
@@ -43,7 +44,7 @@ type TabGuideContent = {
 const TAB_GUIDES: Record<View, TabGuideContent> = {
   today: {
     purpose: "Shows only the work Talha should complete today: no more than two principal subjects.",
-    use: "Open each task, follow its method and practice steps, complete the 20-minute Daily Check, then tick the task.",
+    use: "Open each task, follow its method, complete the reviewed Daily Check or the 20-minute topic-practice link, then tick only that exact task.",
     connected: "Calendar assignments, syllabus topics, Daily Check results, reminders and the rescheduling engine.",
     updates: "Checkboxes and checks update it immediately. Unticked missed work is carried forward automatically.",
   },
@@ -195,6 +196,7 @@ function topicStream(topic: Topic): StudyStream {
 }
 
 const DEFAULT_SETTINGS: Record<string, string> = {
+  planVersion: ACTIVE_PLAN_VERSION,
   targetDate: "2027-02-21",
   examDate: "2027-05-21",
   dailyMinutes: "360",
@@ -306,7 +308,7 @@ function isRevisionDue(item: ProgressItem | undefined) {
 }
 
 function buildPlanner(
-  progressMap: ReadonlyMap<string, ProgressItem>,
+  _progressMap: ReadonlyMap<string, ProgressItem>,
   settings: Record<string, string>,
   today: string,
 ) {
@@ -320,12 +322,15 @@ function buildPlanner(
       const topic = TOPICS.find((candidate) => candidate.id === guided.topicId);
       if (!topic) return;
       starterTopicIds.add(topic.id);
-      queue.push({ id: `guided:${stream.name}:${index + 1}`, topic, stream: stream.name, kind: MAINTENANCE_TOPIC_IDS.has(topic.id) ? "past-paper" : "syllabus", lesson: MAINTENANCE_TOPIC_IDS.has(topic.id) ? { ...guided, title: `${guided.title}: past-paper maintenance`, objective: `Maintain this confident topic through timed past-paper questions; do not reteach it unless errors show a genuine gap.` } : guided, session: index + 1, sessions: STARTER_LESSONS[stream.name].length, minutes: weekdayMinutes });
+      // Talha explicitly confirmed these topics. They stay outside the teaching queue
+      // and are revisited only through past-paper maintenance, never as today's lesson.
+      if (MAINTENANCE_TOPIC_IDS.has(topic.id)) return;
+      queue.push({ id: `${ACTIVE_PLAN_VERSION}:guided:${stream.name}:${topic.id}:${index + 1}`, topic, stream: stream.name, kind: "syllabus", lesson: guided, session: index + 1, sessions: STARTER_LESSONS[stream.name].length, minutes: weekdayMinutes });
     });
     TOPICS.filter((topic) => topicStream(topic) === stream.name && !starterTopicIds.has(topic.id) && !MAINTENANCE_TOPIC_IDS.has(topic.id)).forEach((topic) => {
       const sessions = topicLessonCount(topic, weekdayMinutes);
       for (let session = 1; session <= sessions; session += 1) {
-        queue.push({ id: `${topic.id}:${session}`, topic, stream: stream.name, kind: "syllabus", lesson: topicLesson(topic, session, sessions), session, sessions, minutes: weekdayMinutes });
+        queue.push({ id: `${ACTIVE_PLAN_VERSION}:topic:${topic.id}:${session}`, topic, stream: stream.name, kind: "syllabus", lesson: topicLesson(topic, session, sessions), session, sessions, minutes: weekdayMinutes });
       }
     });
     streamQueues.set(stream.name, queue);
@@ -370,7 +375,7 @@ function buildPlanner(
         const previous = lastLesson.get(stream);
         const topic = previous?.topic ?? TOPICS.find((candidate) => topicStream(candidate) === stream);
         if (!topic) return [];
-        return [{ id: `weekend:${stream}:${date}`, topic, stream, kind: "revision" as const, lesson: { ...sundayLesson(stream, previous?.lesson.title ?? topic.title), title: `${stream}: one-hour whole-topic assessment`, objective: `Complete a timed whole-topic assessment, mark it, and record the exact learning gap.` }, session: 1, sessions: 1, minutes: 60 }];
+        return [{ id: `${ACTIVE_PLAN_VERSION}:weekend:${stream}:${date}`, topic, stream, kind: "revision" as const, lesson: { ...sundayLesson(stream, previous?.lesson.title ?? topic.title), title: `${stream}: one-hour whole-topic assessment`, objective: `Complete a timed whole-topic assessment, mark it, and record the exact learning gap.` }, session: 1, sessions: 1, minutes: 60 }];
       }
       const task = streamQueues.get(stream)?.shift();
       if (task) lastLesson.set(stream, task as PlannerTask);
@@ -383,8 +388,9 @@ function buildPlanner(
   const canonicalTasks = [...canonical.values()].flat();
   const rawDoneDate = (taskId: string) => settings[`planner.done.${taskId}`] || "";
   const completedTaskIds = new Set(canonicalTasks.filter((task) => rawDoneDate(task.id)).map((task) => task.id));
-  const logicalCompletion = (task: PlannerTask) => task.kind === "syllabus" && task.session <= Math.floor(task.sessions * ([0, .45, .75, 1][progressMap.get(task.topic.id)?.stage ?? 0] ?? 0));
-  const incomplete = canonicalTasks.filter((task) => !completedTaskIds.has(task.id) && !logicalCompletion(task)).sort((a, b) => a.originalDate.localeCompare(b.originalDate));
+  // A task disappears only when Talha explicitly checks that exact task. Historic
+  // progress stages may guide support, but must never silently complete calendar work.
+  const incomplete = canonicalTasks.filter((task) => !completedTaskIds.has(task.id)).sort((a, b) => a.originalDate.localeCompare(b.originalDate));
   const effective = new Map<string, PlannerTask[]>();
   canonicalTasks.filter((task) => completedTaskIds.has(task.id)).forEach((task) => {
     const completedOn = rawDoneDate(task.id);
@@ -409,6 +415,10 @@ function buildPlanner(
     predictedCompletion: [...effective.entries()].flatMap(([key, tasks]) => tasks.some((task) => task.kind === "syllabus") ? [key] : []).sort().at(-1) ?? today,
     overdueCount: incomplete.filter((task) => task.originalDate < today).length,
   };
+}
+
+function plannedTaskMinutes(task: PlannerTask) {
+  return task.minutes + (task.kind === "syllabus" ? 20 : 0);
 }
 function StatRing({ value, label }: { value: number; label: string }) {
   return (
@@ -438,10 +448,10 @@ export default function StudyDashboard({
   const [message, setMessage] = useState("");
   const [greeting, setGreeting] = useState("Welcome");
   const [subject, setSubject] = useState<SubjectName | "All">("All");
-  const [stageFilter, setStageFilter] = useState("All stages");
+  const [stageFilter, setStageFilter] = useState("Active syllabus");
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [chosenTopicId, setChosenTopicId] = useState<string>(TOPICS[0].id);
+  const [chosenTopicId, setChosenTopicId] = useState<string>(TOPICS.find((topic) => !MAINTENANCE_TOPIC_IDS.has(topic.id))?.id ?? TOPICS[0].id);
   const [quizTopicId, setQuizTopicId] = useState<string>(REVIEWED_QUIZ_TOPIC_IDS[0]);
   const [dailyQuizTaskId, setDailyQuizTaskId] = useState<string | null>(null);
   const [testTopicId, setTestTopicId] = useState(
@@ -469,27 +479,24 @@ export default function StudyDashboard({
         return;
       }
       if (!response.ok) throw new Error("Progress could not be synchronized.");
-      const data = (await response.json()) as FamilyState;
-      const legacyTwoHourPlan = data.settings?.dailyMinutes === "120" && data.settings?.studyDays === "6";
-      const oldWeekendStart = data.settings?.plannerStartDate === "2026-08-29";
-      const migratedSettings = {
-        ...data.settings,
-        ...(legacyTwoHourPlan ? { dailyMinutes: "450", studyDays: "7", targetDate: "2027-02-21", examDate: "2027-05-21" } : {}),
-        ...(oldWeekendStart ? { plannerStartDate: "2026-08-31" } : {}),
-      };
+      let data = (await response.json()) as FamilyState;
+      if (data.settings?.planVersion !== ACTIVE_PLAN_VERSION) {
+        const activation = await fetch("/api/admin/archive-reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirmation: "ARCHIVE AND START WEEK 1", planVersion: ACTIVE_PLAN_VERSION }),
+        });
+        if (!activation.ok) throw new Error("The corrected plan could not be activated; the previous records remain unchanged.");
+        const refreshed = await fetch("/api/state", { cache: "no-store" });
+        if (!refreshed.ok) throw new Error("The corrected plan was activated but could not be reloaded.");
+        data = (await refreshed.json()) as FamilyState;
+      }
       setFamilyState({
         progress: data.progress ?? [],
         activity: data.activity ?? [],
         attempts: data.attempts ?? [],
-        settings: { ...DEFAULT_SETTINGS, ...(migratedSettings ?? {}) },
+        settings: { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) },
       });
-      if (legacyTwoHourPlan || oldWeekendStart) {
-        const changes = {
-          ...(legacyTwoHourPlan ? { dailyMinutes: "450", studyDays: "7", targetDate: "2027-02-21", examDate: "2027-05-21" } : {}),
-          ...(oldWeekendStart ? { plannerStartDate: "2026-08-31" } : {}),
-        };
-        await Promise.all(Object.entries(changes).map(([key, value]) => fetch("/api/state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setting", key, value }) })));
-      }
       setLastSynced(new Date());
     } catch (error) {
       if (showError) {
@@ -535,13 +542,14 @@ export default function StudyDashboard({
   );
 
   const stats = useMemo<Stats>(() => {
-    const total = TOPICS.length;
-    const learned = TOPICS.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) >= 1).length;
-    const practised = TOPICS.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) >= 2).length;
-    const mastered = TOPICS.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) >= 3).length;
-    const totalMinutes = TOPICS.reduce((sum, topic) => sum + topic.minutes, 0);
+    const activeTopics = TOPICS.filter((topic) => !MAINTENANCE_TOPIC_IDS.has(topic.id));
+    const total = activeTopics.length;
+    const learned = activeTopics.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) >= 1).length;
+    const practised = activeTopics.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) >= 2).length;
+    const mastered = activeTopics.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) >= 3).length;
+    const totalMinutes = activeTopics.reduce((sum, topic) => sum + topic.minutes, 0);
     const weighted = (minimumStage: number) => Math.round(
-      (TOPICS.reduce((sum, topic) => sum + ((progressMap.get(topic.id)?.stage ?? 0) >= minimumStage ? topic.minutes : 0), 0) / totalMinutes) * 100,
+      (activeTopics.reduce((sum, topic) => sum + ((progressMap.get(topic.id)?.stage ?? 0) >= minimumStage ? topic.minutes : 0), 0) / totalMinutes) * 100,
     );
     const coverage = weighted(1);
     const practice = weighted(2);
@@ -562,7 +570,7 @@ export default function StudyDashboard({
       assessmentAverage * 0.25 +
       Math.min(100, timedEvidence * 10) * 0.1,
     );
-    const remainingMinutes = TOPICS.reduce((sum, topic) => {
+    const remainingMinutes = activeTopics.reduce((sum, topic) => {
       const stage = progressMap.get(topic.id)?.stage ?? 0;
       return sum + topic.minutes * [1, 0.55, 0.25, 0][stage];
     }, 0);
@@ -595,7 +603,7 @@ export default function StudyDashboard({
   );
   const todayTasks = planner.effective.get(todayKey) ?? [];
   const todayRemainingTasks = todayTasks.filter((task) => !planner.completedTaskIds.has(task.id));
-  const todayRemainingMinutes = todayRemainingTasks.reduce((sum, task) => sum + task.minutes, 0);
+  const todayRemainingMinutes = todayRemainingTasks.reduce((sum, task) => sum + plannedTaskMinutes(task), 0);
   const todayCompletedCount = todayTasks.length - todayRemainingTasks.length;
   const examDaysLeft = Math.max(0, Math.ceil(
     (dateFromKey(settings.examDate).getTime() - dateFromKey(todayKey).getTime()) / 86_400_000,
@@ -612,7 +620,7 @@ export default function StudyDashboard({
     return outcomes;
   }, [familyState.activity]);
   const streamProgress = useMemo(() => STUDY_STREAMS.map((stream) => {
-    const topics = TOPICS.filter((topic) => topicStream(topic) === stream.name);
+    const topics = TOPICS.filter((topic) => topicStream(topic) === stream.name && !MAINTENANCE_TOPIC_IDS.has(topic.id));
     const total = topics.reduce((sum, topic) => sum + topic.minutes, 0);
     const completed = topics.reduce((sum, topic) => sum + topic.minutes * ([0, .45, .75, 1][progressMap.get(topic.id)?.stage ?? 0] ?? 0), 0);
     return { ...stream, percent: total ? Math.round(completed / total * 100) : 0 };
@@ -641,13 +649,13 @@ export default function StudyDashboard({
     const timer = window.setTimeout(() => {
       const tasks = planner.effective.get(localDateKey()) ?? [];
       const remaining = tasks.filter((task) => !planner.completedTaskIds.has(task.id));
-      new Notification("Talha's study plan is ready", { body: `${remaining.length} tasks left · ${remaining.reduce((sum, task) => sum + task.minutes, 0)} minutes remaining.` });
+      new Notification("Talha's study plan is ready", { body: `${remaining.length} tasks left · ${remaining.reduce((sum, task) => sum + plannedTaskMinutes(task), 0)} minutes remaining.` });
     }, Math.min(delay, 2_147_000_000));
     return () => window.clearTimeout(timer);
   }, [planner.effective, settings.reminderTime, settings.remindersEnabled]);
 
   const roadmapSubjects = useMemo<RoadmapSubject[]>(() => SUBJECTS.map((roadmapSubject) => {
-    const topics = TOPICS.filter((topic) => topic.subject === roadmapSubject);
+    const topics = TOPICS.filter((topic) => topic.subject === roadmapSubject && !MAINTENANCE_TOPIC_IDS.has(topic.id));
     const totalMinutes = topics.reduce((sum, topic) => sum + topic.minutes, 0);
     const completedMinutes = topics.reduce((sum, topic) => {
       const stage = progressMap.get(topic.id)?.stage ?? 0;
@@ -668,7 +676,9 @@ export default function StudyDashboard({
     return TOPICS.filter((topic) => {
       const topicStage = progressMap.get(topic.id)?.stage ?? 0;
       const matchesSubject = subject === "All" || topic.subject === subject;
-      const matchesStage = stageFilter === "All stages" ||
+      const maintenance = MAINTENANCE_TOPIC_IDS.has(topic.id);
+      const matchesStage = stageFilter === "Active syllabus" ? !maintenance :
+        stageFilter === "Maintenance" ? maintenance : stageFilter === "All stages" ||
         (stageFilter === "Revision due" ? isRevisionDue(progressMap.get(topic.id)) : STAGES[topicStage] === stageFilter);
       const matchesQuery = !query || `${topic.code} ${topic.unit} ${topic.title}`.toLowerCase().includes(query);
       return matchesSubject && matchesStage && matchesQuery;
@@ -678,14 +688,14 @@ export default function StudyDashboard({
   const chosenTopic = TOPICS.find((topic) => topic.id === chosenTopicId) ?? TOPICS[0];
   const chosenPrerequisites = prerequisiteTopics(chosenTopic.id);
   const missingPrerequisites = chosenPrerequisites.filter(
-    (topic) => (progressMap.get(topic.id)?.stage ?? 0) === 0,
+    (topic) => !MAINTENANCE_TOPIC_IDS.has(topic.id) && (progressMap.get(topic.id)?.stage ?? 0) === 0,
   );
   const chosenLinkedNext = linkedNextTopics(chosenTopic.id);
 
   function revealTopic(topic: Topic) {
     setSubject(topic.subject);
     setSearch(topic.code);
-    setStageFilter("All stages");
+    setStageFilter(MAINTENANCE_TOPIC_IDS.has(topic.id) ? "Maintenance" : "Active syllabus");
     setExpanded(topic.id);
   }
 
@@ -725,7 +735,7 @@ export default function StudyDashboard({
     if (enabled) {
       const tasks = planner.effective.get(localDateKey()) ?? [];
       const remaining = tasks.filter((task) => !planner.completedTaskIds.has(task.id));
-      new Notification("Talha's study plan is ready", { body: `${remaining.length} tasks left · ${remaining.reduce((sum, task) => sum + task.minutes, 0)} minutes remaining.` });
+      new Notification("Talha's study plan is ready", { body: `${remaining.length} tasks left · ${remaining.reduce((sum, task) => sum + plannedTaskMinutes(task), 0)} minutes remaining.` });
     }
   }
 
@@ -1027,12 +1037,12 @@ export default function StudyDashboard({
         {view === "today" && (
           <>
             <section className="hero-panel">
-              <div><span className="eyebrow light">TODAY&apos;S DIRECTION</span><h2>One clear step.<br />Then the next.</h2><p>{stats.mastered} topics are secure and {TOPICS.filter((topic) => isRevisionDue(progressMap.get(topic.id))).length} recalls are due. Complete today&apos;s focused steps to keep the full roadmap on schedule.</p><div className="hero-buttons"><button className="hero-action" onClick={() => setView("calendar")}>See complete roadmap <span>→</span></button><button className="hero-secondary" onClick={() => void enableReminders()}>{remindersEnabled ? "Reminders enabled" : "Enable reminders"}</button></div></div>
+              <div><span className="eyebrow light">TODAY&apos;S DIRECTION</span><h2>One clear step.<br />Then the next.</h2><p>{MAINTENANCE_TOPIC_IDS.size} topics Talha confirmed are in past-paper maintenance; {stats.mastered} active topics are secure through evidence. Complete today&apos;s two focused lessons to keep the roadmap on schedule.</p><div className="hero-buttons"><button className="hero-action" onClick={() => setView("calendar")}>See complete roadmap <span>→</span></button><button className="hero-secondary" onClick={() => void enableReminders()}>{remindersEnabled ? "Reminders enabled" : "Enable reminders"}</button></div></div>
               <StatRing value={stats.readiness} label="evidence readiness" />
             </section>
             <section className="section-block">
               <div className="section-heading"><div><span className="eyebrow">TODAY&apos;S CHECKLIST</span><h2>{todayRemainingTasks.length} task{todayRemainingTasks.length === 1 ? "" : "s"} left · {todayRemainingMinutes} minutes remaining</h2><small className="today-progress-note">{todayCompletedCount} of {todayTasks.length} completed today</small></div><button className="inline-calendar-button" onClick={() => { setSelectedDate(todayKey); setCalendarMonth(todayKey.slice(0, 7)); setView("calendar"); }}>Open full calendar →</button></div>
-              <div className="today-checklist">{todayTasks.map((task) => { const checked = planner.completedTaskIds.has(task.id); const checkOutcome = dailyCheckOutcomeByTask.get(task.id); return <label className={`planner-task ${subjectClass(task.topic.subject)} ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><small>{task.stream} · {task.minutes} min{task.carriedForward ? " · carried forward" : ""}</small><strong>{task.lesson.title}</strong><small>{task.lesson.objective}</small>{checkOutcome && <small className="daily-check-status">Latest check: <b>{checkOutcome}</b></small>}</span><span className="planner-task-actions">{hasDailyQuiz(task.id) && <button type="button" className="daily-check-button" onClick={() => setDailyQuizTaskId(task.id)}>{checkOutcome ? "Retake check" : "Daily check"}</button>}<button type="button" onClick={() => { revealTopic(task.topic); setView("syllabus"); }}>Study</button></span></label>; })}{!todayTasks.length && <EmptyMessage>No study tasks are scheduled for today.</EmptyMessage>}</div>
+              <div className="today-checklist">{todayTasks.map((task) => { const checked = planner.completedTaskIds.has(task.id); const checkOutcome = dailyCheckOutcomeByTask.get(task.id); return <label className={`planner-task ${subjectClass(task.topic.subject)} ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><small>{task.stream} · {task.minutes} min lesson{task.kind === "syllabus" ? " + 20 min check" : ""}{task.carriedForward ? " · carried forward" : ""}</small><strong>{task.lesson.title}</strong><small>{task.lesson.objective}</small>{checkOutcome && <small className="daily-check-status">Latest check: <b>{checkOutcome}</b></small>}</span><span className="planner-task-actions">{hasDailyQuiz(task.id) && <button type="button" className="daily-check-button" onClick={() => setDailyQuizTaskId(task.id)}>{checkOutcome ? "Retake check" : "Daily check"}</button>}<button type="button" onClick={() => window.open(topicPracticeUrl(task.topic), "_blank", "noopener,noreferrer")}>20-min practice ↗</button><button type="button" onClick={() => { revealTopic(task.topic); setView("syllabus"); }}>Study</button></span></label>; })}{!todayTasks.length && <EmptyMessage>No study tasks are scheduled for today.</EmptyMessage>}</div>
             </section>
           </>
         )}
@@ -1060,11 +1070,11 @@ export default function StudyDashboard({
                 })}</div>
               </div>
               <div className="date-tasks panel">
-                <div className="section-heading"><div><span className="eyebrow">ASSIGNED TASKS</span><h2>{fullDateLabel(selectedDate)}</h2></div><strong>{selectedPlannerTasks.reduce((sum, task) => sum + task.minutes, 0)} min</strong></div>
+                <div className="section-heading"><div><span className="eyebrow">ASSIGNED TASKS</span><h2>{fullDateLabel(selectedDate)}</h2></div><strong>{selectedPlannerTasks.reduce((sum, task) => sum + plannedTaskMinutes(task), 0)} min</strong></div>
                 {STUDY_STREAMS.map((stream) => {
                   const subjectTasks = selectedPlannerTasks.filter((task) => task.stream === stream.name);
                   if (!subjectTasks.length) return null;
-                  return <div className="subject-task-group" key={stream.name}><h3><i style={{ background: stream.color }} />{stream.name}<span>{subjectTasks.reduce((sum, task) => sum + task.minutes, 0)} min</span></h3>{subjectTasks.map((task) => { const checked = planner.completedTaskIds.has(task.id); const checkOutcome = dailyCheckOutcomeByTask.get(task.id); return <label className={`planner-task ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><strong>{task.lesson.title}</strong><small>{task.kind === "revision" ? "Sunday consolidation" : task.kind === "past-paper" ? (task.topic.code === "PAST PAPER" ? "Past-paper marathon" : "Topical exam practice") : `${task.topic.code} · daily lesson`} · today {task.minutes} min{task.carriedForward ? ` · moved from ${fullDateLabel(task.originalDate)}` : ""}</small><small><b>Goal:</b> {task.lesson.objective}</small><small><b>Method:</b> {task.lesson.studyMethod}</small><small><b>Practice:</b> {task.lesson.practice}</small><small><b>Recall:</b> {task.lesson.recall}</small>{checkOutcome && <small className="daily-check-status">Latest check: <b>{checkOutcome}</b></small>}</span><span className="planner-task-actions">{hasDailyQuiz(task.id) && <button type="button" className="daily-check-button" onClick={() => setDailyQuizTaskId(task.id)}>{checkOutcome ? "Retake check" : "Daily check"}</button>}<button type="button" onClick={() => { revealTopic(task.topic); setView(task.kind === "past-paper" ? "tests" : "syllabus"); }}>{task.kind === "past-paper" ? "Record" : "Open"}</button></span></label>; })}</div>;
+                  return <div className="subject-task-group" key={stream.name}><h3><i style={{ background: stream.color }} />{stream.name}<span>{subjectTasks.reduce((sum, task) => sum + plannedTaskMinutes(task), 0)} min</span></h3>{subjectTasks.map((task) => { const checked = planner.completedTaskIds.has(task.id); const checkOutcome = dailyCheckOutcomeByTask.get(task.id); return <label className={`planner-task ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><strong>{task.lesson.title}</strong><small>{task.kind === "revision" ? "Weekend assessment" : task.kind === "past-paper" ? (task.topic.code === "PAST PAPER" ? "Past-paper marathon" : "Topical exam practice") : `${task.topic.code} · daily lesson`} · {task.minutes} min{task.kind === "syllabus" ? " + 20 min check" : ""}{task.carriedForward ? ` · moved from ${fullDateLabel(task.originalDate)}` : ""}</small><small><b>Goal:</b> {task.lesson.objective}</small><small><b>Method:</b> {task.lesson.studyMethod}</small><small><b>Practice:</b> {task.lesson.practice}</small><small><b>Recall:</b> {task.lesson.recall}</small>{checkOutcome && <small className="daily-check-status">Latest check: <b>{checkOutcome}</b></small>}</span><span className="planner-task-actions">{hasDailyQuiz(task.id) && <button type="button" className="daily-check-button" onClick={() => setDailyQuizTaskId(task.id)}>{checkOutcome ? "Retake check" : "Daily check"}</button>}<button type="button" onClick={() => window.open(topicPracticeUrl(task.topic), "_blank", "noopener,noreferrer")}>20-min practice ↗</button><button type="button" onClick={() => { revealTopic(task.topic); setView(task.kind === "past-paper" ? "tests" : "syllabus"); }}>{task.kind === "past-paper" ? "Record" : "Open"}</button></span></label>; })}</div>;
                 })}
                 {!selectedPlannerTasks.length && <EmptyMessage>{isStudyDate(selectedDate, studyDays) ? "No task is assigned on this date." : "Rest and consolidation day. Missed work will move to the next available study day."}</EmptyMessage>}
               </div>
@@ -1090,20 +1100,20 @@ export default function StudyDashboard({
                 {missingPrerequisites[0] && <button className="path-secondary" onClick={() => { setChosenTopicId(missingPrerequisites[0].id); revealTopic(missingPrerequisites[0]); }}>Learn prerequisites first</button>}
               </div>
               <div className="path-columns">
-                <div><strong>Earlier knowledge needed</strong>{chosenPrerequisites.length ? <div className="path-chips">{chosenPrerequisites.map((topic) => { const stage = progressMap.get(topic.id)?.stage ?? 0; return <button key={topic.id} className={stage > 0 ? "complete" : "missing"} onClick={() => { setChosenTopicId(topic.id); revealTopic(topic); }}><span>{stage > 0 ? "✓" : "!"}</span>{topic.code} · {topic.title}<small>{STAGES[stage]}</small></button>; })}</div> : <p>No earlier topic is required. Talha can begin here.</p>}</div>
+                <div><strong>Earlier knowledge needed</strong>{chosenPrerequisites.length ? <div className="path-chips">{chosenPrerequisites.map((topic) => { const stage = progressMap.get(topic.id)?.stage ?? 0; const maintenance = MAINTENANCE_TOPIC_IDS.has(topic.id); return <button key={topic.id} className={maintenance || stage > 0 ? "complete" : "missing"} onClick={() => { setChosenTopicId(topic.id); revealTopic(topic); }}><span>{maintenance || stage > 0 ? "✓" : "!"}</span>{topic.code} · {topic.title}<small>{maintenance ? "Maintenance" : STAGES[stage]}</small></button>; })}</div> : <p>No earlier topic is required. Talha can begin here.</p>}</div>
                 <div><strong>Topics that use this knowledge</strong>{chosenLinkedNext.length ? <div className="path-chips">{chosenLinkedNext.map((topic) => <button key={topic.id} onClick={() => { setChosenTopicId(topic.id); revealTopic(topic); }}><span>→</span>{topic.code} · {topic.title}<small>{STAGES[progressMap.get(topic.id)?.stage ?? 0]}</small></button>)}</div> : <p>This is currently an end-point topic in its learning path.</p>}</div>
               </div>
             </div>
             <div className="metrics-row compact"><article><span>Coverage</span><strong>{stats.coverage}%</strong><small>{stats.learned}/{stats.total} topics</small></article><article><span>Practising</span><strong>{stats.practice}%</strong><small>{stats.practised} topics</small></article><article><span>Secure</span><strong>{stats.mastery}%</strong><small>{stats.mastered} topics</small></article><article><span>Remaining</span><strong>{Math.ceil(stats.remainingMinutes / 60)}h</strong><small>weighted work to Secure</small></article></div>
-            <div className="filter-panel"><div className="subject-tabs"><button className={subject === "All" ? "active" : ""} onClick={() => setSubject("All")}>All <span>{TOPICS.length}</span></button>{SUBJECTS.map((item) => <button key={item} className={subject === item ? "active" : ""} onClick={() => setSubject(item)}>{SUBJECT_META[item].short} <span>{TOPICS.filter((topic) => topic.subject === item).length}</span></button>)}</div><div className="filter-controls"><label><span className="sr-only">Search syllabus</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search code, unit or topic" /></label><select value={stageFilter} onChange={(event) => setStageFilter(event.target.value)} aria-label="Filter by status"><option>All stages</option>{STAGES.map((item) => <option key={item}>{item}</option>)}<option>Revision due</option></select><strong>{filteredTopics.length} topics</strong></div></div>
+            <div className="filter-panel"><div className="subject-tabs"><button className={subject === "All" ? "active" : ""} onClick={() => setSubject("All")}>All <span>{TOPICS.length}</span></button>{SUBJECTS.map((item) => <button key={item} className={subject === item ? "active" : ""} onClick={() => setSubject(item)}>{SUBJECT_META[item].short} <span>{TOPICS.filter((topic) => topic.subject === item).length}</span></button>)}</div><div className="filter-controls"><label><span className="sr-only">Search syllabus</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search code, unit or topic" /></label><select value={stageFilter} onChange={(event) => setStageFilter(event.target.value)} aria-label="Filter by status"><option>Active syllabus</option><option>Maintenance</option><option>All stages</option>{STAGES.map((item) => <option key={item}>{item}</option>)}<option>Revision due</option></select><strong>{filteredTopics.length} topics</strong></div></div>
             <div className="topic-list">
               {filteredTopics.map((topic) => {
-                const item = progressMap.get(topic.id); const topicStage = item?.stage ?? 0; const open = expanded === topic.id;
+                const item = progressMap.get(topic.id); const topicStage = item?.stage ?? 0; const open = expanded === topic.id; const maintenance = MAINTENANCE_TOPIC_IDS.has(topic.id);
                 const subjectMinutes = TOPICS.filter((candidate) => candidate.subject === topic.subject).reduce((sum, candidate) => sum + candidate.minutes, 0);
                 const workloadShare = ((topic.minutes / subjectMinutes) * 100).toFixed(1);
                 const sessions = Math.max(1, Math.ceil(topic.minutes / 45));
                 const guidance = effortGuidance(item?.bestScore ?? 0, tests.find((attempt) => attempt.topicId === topic.id)?.errorCategory);
-                return <article className="topic-row" key={topic.id}><button className={`stage-button ${stageClass(topicStage)}`} onClick={() => updateStage(topic, topicStage === 3 ? 3 : topicStage + 1)} aria-label={`Update ${topic.title}`}><span>{topicStage === 0 ? "" : topicStage === 3 ? "★" : "✓"}</span></button><div className="topic-main"><div className="topic-kicker"><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><span>{topic.code}</span><span>{topic.unit}</span></div><h3>{topic.title}</h3><div className="topic-meta"><span>{importanceLabel(topic.importance)} exam priority</span><span>{topic.paper}</span><span>{Math.ceil(topic.minutes / 60 * 10) / 10}h · {sessions} session{sessions === 1 ? "" : "s"}</span><span>{workloadShare}% of subject workload</span><span>{topicStage ? guidance.effort : "Not started"}</span>{hasReviewedQuiz(topic.id) && <span>Reviewed quiz ready</span>}</div>{open && <div className="topic-detail"><div><strong>How to complete it</strong><p>Learn the key idea, work through an example, practise independently, correct errors, then return for a recall check.</p></div><div><strong>What matters in the exam</strong><p>{topic.tip}</p></div><div className="topic-links"><strong>Linked learning path</strong>{prerequisiteTopics(topic.id).length ? <p>Builds on: {prerequisiteTopics(topic.id).map((linked) => linked.title).join(" · ")}</p> : <p>No earlier foundation required.</p>}{linkedNextTopics(topic.id).length > 0 && <p>Leads to: {linkedNextTopics(topic.id).map((linked) => linked.title).join(" · ")}</p>}<button onClick={() => showFullPath(topic)}>Show full path above</button></div><div className="stuck-box"><strong>Finding this difficult?</strong><p>Choose the help that matches the problem.</p><div><button onClick={() => openPrerequisiteHelp(topic)}>I forgot an earlier idea</button><button onClick={() => openPracticeHelp(topic)}>I cannot solve questions</button><button onClick={() => openRepeatPicker(topic)}>Repeat this later</button></div>{repeatPickerTopicId === topic.id && <div className="repeat-scheduler"><label><span>Choose the repeat date</span><input type="date" min={moveDate(localDateKey(), 1)} value={repeatDateChoice} onChange={(event) => setRepeatDateChoice(event.target.value)} /></label><button onClick={() => void repeatTopicLater(topic)}>Confirm date</button><button className="repeat-cancel" onClick={() => setRepeatPickerTopicId(null)}>Cancel</button></div>}{settings[`planner.repeat.${topic.id}`] && <div className="repeat-scheduled"><span>Scheduled for {fullDateLabel(settings[`planner.repeat.${topic.id}`])}</span><button onClick={() => void undoRepeat(topic)}>Undo repeat</button></div>}</div><a href={youtubeSearchUrl(topic)} target="_blank" rel="noreferrer">Watch a selected topic lesson ↗</a></div>}</div><div className="topic-actions"><span className={`status-pill ${stageClass(topicStage)}`}>{STAGES[topicStage]}</span>{hasReviewedQuiz(topic.id) && topicStage > 0 && <button className="quiz-row-button" onClick={() => openQuiz(topic)}>Quiz</button>}{topicStage > 0 && <button onClick={() => updateStage(topic, 0)} aria-label={`Reset ${topic.title} to Not started`}>Reset</button>}<button onClick={() => { setExpanded(open ? null : topic.id); setStuckTopicId(open ? null : topic.id); }}>{open ? "Close" : "Lesson help"}</button></div></article>;
+                return <article className="topic-row" key={topic.id}><button disabled={maintenance} className={`stage-button ${stageClass(topicStage)}`} onClick={() => updateStage(topic, topicStage === 3 ? 3 : topicStage + 1)} aria-label={maintenance ? `${topic.title} is in confirmed maintenance` : `Update ${topic.title}`}><span>{maintenance ? "✓" : topicStage === 0 ? "" : topicStage === 3 ? "★" : "✓"}</span></button><div className="topic-main"><div className="topic-kicker"><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><span>{topic.code}</span><span>{topic.unit}</span></div><h3>{topic.title}</h3><div className="topic-meta"><span>{importanceLabel(topic.importance)} exam priority</span><span>{topic.paper}</span><span>{Math.ceil(topic.minutes / 60 * 10) / 10}h · {sessions} session{sessions === 1 ? "" : "s"}</span><span>{workloadShare}% of subject workload</span><span>{maintenance ? "Confident · past-paper maintenance only" : topicStage ? guidance.effort : "Not started"}</span>{hasReviewedQuiz(topic.id) && <span>Reviewed quiz ready</span>}</div>{open && <div className="topic-detail"><div><strong>{maintenance ? "How to maintain it" : "How to complete it"}</strong><p>{maintenance ? "Do topical past-paper questions, mark them strictly, and return to teaching only if repeated errors reveal a gap." : "Learn the key idea, work through an example, practise independently, correct errors, then return for a recall check."}</p></div><div><strong>What matters in the exam</strong><p>{topic.tip}</p></div><div className="topic-links"><strong>Linked learning path</strong>{prerequisiteTopics(topic.id).length ? <p>Builds on: {prerequisiteTopics(topic.id).map((linked) => linked.title).join(" · ")}</p> : <p>No earlier foundation required.</p>}{linkedNextTopics(topic.id).length > 0 && <p>Leads to: {linkedNextTopics(topic.id).map((linked) => linked.title).join(" · ")}</p>}<button onClick={() => showFullPath(topic)}>Show full path above</button></div><div className="stuck-box"><strong>Finding this difficult?</strong><p>Choose the help that matches the problem.</p><div><button onClick={() => openPrerequisiteHelp(topic)}>I forgot an earlier idea</button><button onClick={() => openPracticeHelp(topic)}>I cannot solve questions</button><button onClick={() => openRepeatPicker(topic)}>Repeat this later</button></div>{repeatPickerTopicId === topic.id && <div className="repeat-scheduler"><label><span>Choose the repeat date</span><input type="date" min={moveDate(localDateKey(), 1)} value={repeatDateChoice} onChange={(event) => setRepeatDateChoice(event.target.value)} /></label><button onClick={() => void repeatTopicLater(topic)}>Confirm date</button><button className="repeat-cancel" onClick={() => setRepeatPickerTopicId(null)}>Cancel</button></div>}{settings[`planner.repeat.${topic.id}`] && <div className="repeat-scheduled"><span>Scheduled for {fullDateLabel(settings[`planner.repeat.${topic.id}`])}</span><button onClick={() => void undoRepeat(topic)}>Undo repeat</button></div>}</div><a href={topicPracticeUrl(topic)} target="_blank" rel="noreferrer">Open topic-specific Cambridge practice ↗</a><a href={youtubeSearchUrl(topic)} target="_blank" rel="noreferrer">Watch a selected topic lesson ↗</a></div>}</div><div className="topic-actions"><span className={`status-pill ${stageClass(topicStage)}`}>{maintenance ? "Maintenance" : STAGES[topicStage]}</span>{hasReviewedQuiz(topic.id) && topicStage > 0 && <button className="quiz-row-button" onClick={() => openQuiz(topic)}>Quiz</button>}{!maintenance && topicStage > 0 && <button onClick={() => updateStage(topic, 0)} aria-label={`Reset ${topic.title} to Not started`}>Reset</button>}<button onClick={() => { setExpanded(open ? null : topic.id); setStuckTopicId(open ? null : topic.id); }}>{open ? "Close" : "Lesson help"}</button></div></article>;
               })}
               {filteredTopics.length === 0 && <EmptyMessage>No topics match these filters.</EmptyMessage>}
             </div>
@@ -1182,9 +1192,9 @@ export default function StudyDashboard({
 
             <div className="strategy-grid">
               <article className="panel"><span className="eyebrow">01 · TODAY</span><h2>Follow only today&apos;s two subjects</h2><p>Open <b>Today</b> and complete the two displayed subject tasks in order. A normal weekday subject block is approximately three hours. Use the method, practice and recall instructions shown inside the task.</p><p><b>Tick a task only after doing the assigned work.</b> Completing one task must not bring tomorrow&apos;s lesson into the same day. The remaining minutes and task count reduce immediately.</p></article>
-              <article className="panel"><span className="eyebrow">02 · DAILY CHECK</span><h2>Prove the lesson for 20 minutes</h2><p>After each weekday subject task, open its Daily Check. Work without notes first. Submit the check to see the missing ideas and the effort needed next.</p><p><b>Ready to continue</b> means proceed on schedule. <b>More practice needed</b> means correct errors and retry. <b>Repeat foundation</b> means revisit the explanation or prerequisite before moving independently.</p></article>
+              <article className="panel"><span className="eyebrow">02 · DAILY CHECK</span><h2>Prove the lesson for 20 minutes</h2><p>After each weekday subject task, use its reviewed Daily Check. Until a matching reviewed check is published, use <b>20-min practice</b> to open topic-specific Cambridge questions and mark them with the matching scheme. Old quiz IDs are blocked from attaching to a new lesson.</p><p><b>Ready to continue</b> means proceed on schedule. <b>More practice needed</b> means correct errors and retry. <b>Repeat foundation</b> means revisit the explanation or prerequisite before moving independently.</p></article>
               <article className="panel"><span className="eyebrow">03 · CALENDAR</span><h2>See the plan by date</h2><p>Select any date to see its assigned tasks. Each date should contain no more than two principal subjects. The small number on a calendar day shows completed tasks against assigned tasks.</p><p>If a day or subject is missed, leave it unticked. The LMS carries unfinished work forward and recalculates the later timeline; it must not erase or silently mark the work complete.</p></article>
-              <article className="panel"><span className="eyebrow">04 · SYLLABUS</span><h2>Understand the complete learning path</h2><p>Use <b>Syllabus</b> to browse every topic, estimated time, paper, importance and current learning stage. Select a topic to see earlier foundations and later linked topics.</p><p><b>Not started → Learning → Practising → Secure.</b> “Secure” requires evidence, not simply reading. Talha&apos;s confident topics stay in the past-paper maintenance pool instead of being retaught.</p></article>
+              <article className="panel"><span className="eyebrow">04 · SYLLABUS</span><h2>Understand the complete learning path</h2><p><b>Active syllabus</b> contains everything Talha must still complete. <b>Maintenance</b> contains only the topics he explicitly confirmed beforehand. Select a topic to see time, paper, importance, prerequisites and later linked topics.</p><p><b>Not started → Learning → Practising → Secure.</b> Checking today&apos;s task records only that lesson; “Secure” still requires assessment evidence. No old progress stage can check off a new calendar task.</p></article>
               <article className="panel"><span className="eyebrow">05 · IMPORTANT DATES</span><h2>Know every examination deadline</h2><p>This tab lists each Cambridge paper, duration and days remaining. Use it to understand urgency; the calendar remains the source of today&apos;s work.</p></article>
               <article className="panel"><span className="eyebrow">06 · WEEKEND ASSESSMENTS</span><h2>Test a complete topic for one hour</h2><p>At weekends, complete the assigned whole-topic assessment under timed conditions. Mark it using the correct mark scheme, then record marks, time and the main error type.</p><p>The LMS reports effort and improvement actions rather than displaying old school grades. A strong result still returns later for retention.</p></article>
               <article className="panel"><span className="eyebrow">07 · DIFFICULTY & REPEAT</span><h2>Use help without abandoning the topic</h2><p>Open Lesson Help when stuck. Use the prerequisite path if an earlier idea is missing, practise a simpler example when questions cannot be solved, or choose <b>Repeat later</b> and select a date.</p><p>If Repeat later was selected by mistake, use Reset/undo before choosing another date.</p></article>
@@ -1242,7 +1252,7 @@ function QuizBankSyncCard() {
     } finally { setSyncing(false); }
   }
 
-  return <div className="panel"><div className="section-heading"><div><span className="eyebrow">CONTROLLED QUIZ BANK</span><h2>Google Sheet publishing</h2></div><a href="https://docs.google.com/spreadsheets/d/1IFCOQogNrT9UhwzjLjIzZlLxwqVtQ8_NOsrQfrGSEXI/edit" target="_blank" rel="noreferrer">Open question editor</a></div><p>{status}</p><button type="button" onClick={() => void syncNow()} disabled={syncing}>{syncing ? "Checking..." : "Validate and sync approved rows"}</button><p className="panel-note">Draft and Reviewed rows stay out of Talha&apos;s quizzes. If validation fails, the current working bank remains unchanged.</p></div>;
+  return <div className="panel"><div className="section-heading"><div><span className="eyebrow">CONTROLLED QUIZ BANK</span><h2>Google Sheet publishing</h2></div><a href="https://docs.google.com/spreadsheets/d/1IFCOQogNrT9UhwzjLjIzZlLxwqVtQ8_NOsrQfrGSEXI/edit" target="_blank" rel="noreferrer">Open question editor</a></div><p>{status}</p><button type="button" onClick={() => void syncNow()} disabled={syncing}>{syncing ? "Checking..." : "Validate and sync approved rows"}</button><p className="panel-note">Only Approved rows carrying the active plan&apos;s exact task ID can publish. Draft, Reviewed, incomplete and old-plan rows are rejected; the working bank stays unchanged if validation fails.</p></div>;
 }
 
 function ParentView({ progressMap, activity, attempts, stats, settings, requiredDaily }: { progressMap: Map<string, ProgressItem>; activity: ActivityItem[]; attempts: AssessmentAttempt[]; stats: Stats; settings: Record<string, string>; requiredDaily: number }) {
