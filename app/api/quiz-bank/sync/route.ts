@@ -3,6 +3,7 @@ import { requireFamilySession } from "@/app/family-auth";
 import { getRuntimeEnv } from "@/app/runtime-env";
 import { getDb } from "@/db";
 import { quizBankQuestions, quizBankSyncs } from "@/db/schema";
+import { ACTIVE_PLAN_VERSION } from "@/app/lesson-plan";
 
 const FAMILY_ID = "talha-family";
 const HEADERS = ["question_id","task_id","subject","topic_id","lesson_title","question_type","prompt","option_a","option_b","option_c","option_d","correct_answer","explanation","estimated_minutes","review_status","source_reference","version"];
@@ -34,7 +35,7 @@ function validate(csv: string) {
     const [questionId, taskId, subject, topicId, lessonTitle, type, prompt, a, b, c, d, answer, explanation, minutes, , source, version] = row.map((item) => item.trim());
     const key = `${taskId}:${questionId}`;
     const options = [a,b,c,d].filter(Boolean).map((label, index) => ({ id: String.fromCharCode(97 + index), label }));
-    if (!questionId || !taskId || !subject || !topicId || !lessonTitle || !prompt || !answer || !explanation || !["choice","numeric"].includes(type) || seen.has(key) || (type === "choice" && !options.some((option) => option.id === answer))) {
+    if (!questionId || !taskId.startsWith(`${ACTIVE_PLAN_VERSION}:`) || !subject || !topicId || !lessonTitle || !prompt || !answer || !explanation || !["choice","numeric"].includes(type) || seen.has(key) || (type === "choice" && !options.some((option) => option.id === answer))) {
       rejected.push(key || "unnamed row"); return [];
     }
     seen.add(key);
@@ -45,7 +46,7 @@ function validate(csv: string) {
   });
   const counts = new Map<string, number>(); valid.forEach((item) => counts.set(item.taskId, (counts.get(item.taskId) ?? 0) + 1));
   for (const [taskId, count] of counts) if (count < 5) throw new Error(`${taskId} has only ${count} approved questions; at least 5 are required.`);
-  if (!valid.length) throw new Error("No approved, valid daily-check questions were found.");
+  if (!valid.length) throw new Error(`No approved questions match the active plan (${ACTIVE_PLAN_VERSION}). Old task IDs cannot be published to Talha.`);
   return { valid, rejected };
 }
 
