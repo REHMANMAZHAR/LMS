@@ -12,6 +12,7 @@ import {
 
 const FAMILY_ID = "talha-family";
 const SETTING_KEYS = new Set([
+  "planVersion",
   "targetDate",
   "examDate",
   "dailyMinutes",
