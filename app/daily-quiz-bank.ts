@@ -1,4 +1,5 @@
 import type { DailyQuizQuestion } from "./daily-quiz-model";
+import { STARTER_REVIEW_QUIZZES } from "./starter-review-bank";
 
 export type PrivateQuestion = Omit<DailyQuizQuestion, "number"> & {
   answer: string; tolerance?: number; estimatedMinutes?: number; sourceReference?: string;
@@ -319,13 +320,13 @@ const SUPPLEMENTAL_QUESTIONS: Record<string, PrivateQuestion[]> = {
   "guided:Pakistan Geography:7": [choice("g7d", "Which desert is associated with the Sutlej valley in southern Punjab?", "b", "Cholistan", "Cholistan lies south-east of the Sutlej in Punjab.", ["Thal", "Cholistan", "Kharan", "Gobi"]), choice("g7e", "What farming risk can poorly managed desert irrigation cause?", "c", "Waterlogging and salinity", "High evaporation and inadequate drainage can damage soils.", ["Avalanches", "Volcanic ash", "Waterlogging and salinity", "Glacial erosion"] )],
 };
 
-export const DAILY_QUIZZES: DailyQuiz[] = BASE_DAILY_QUIZZES.map((item) => ({
+export const DAILY_QUIZZES: DailyQuiz[] = [...BASE_DAILY_QUIZZES, ...STARTER_REVIEW_QUIZZES].map((item) => ({
   ...item,
   questions: [...item.questions, ...(SUPPLEMENTAL_QUESTIONS[item.taskId] ?? [])],
 }));
 
 const byTaskId = new Map(DAILY_QUIZZES.map((item) => [item.taskId, item]));
-export const DAILY_QUIZ_VERSION = "daily-check-v3-weekend-topical";
+export const DAILY_QUIZ_VERSION = "daily-check-v4-starter-retention";
 export const DAILY_QUIZ_DURATION_SECONDS = 20 * 60;
 export function hasDailyQuiz(taskId: string) { return byTaskId.has(taskId); }
 export function getDailyQuiz(taskId: string) { return byTaskId.get(taskId); }
