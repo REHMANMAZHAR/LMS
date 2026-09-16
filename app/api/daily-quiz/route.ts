@@ -91,14 +91,20 @@ export async function POST(request: Request) {
     const score = feedback.filter((item) => item.correct).length;
     const maxScore = feedback.length;
     const percentage = Math.round((score / maxScore) * 100);
-    const readyThreshold = dailyQuiz.stream === "Mathematics" || dailyQuiz.stream === "Chemistry" ? 85 : 80;
+    const readyThreshold = resolved?.mode === "weekly" ? 80 : dailyQuiz.stream === "Mathematics" || dailyQuiz.stream === "Chemistry" ? 85 : 80;
     const outcome = percentage >= readyThreshold ? "Ready to continue" : percentage >= 60 ? "More practice needed" : "Repeat foundation";
     const missed = feedback.filter((item) => !item.correct);
-    const guidance = outcome === "Ready to continue"
-      ? "Continue to the next scheduled lesson, then revisit this check during Sunday consolidation."
-      : outcome === "More practice needed"
-        ? `Correct the ${missed.length} missed idea${missed.length === 1 ? "" : "s"}, repeat two similar examples, then retake this check.`
-        : "Re-read the lesson key points, work through one guided example, and retry before moving on independently.";
+    const guidance = resolved?.mode === "weekly"
+      ? outcome === "Ready to continue"
+        ? "The week’s learning is on track. Review every correction, then continue with next week’s plan."
+        : outcome === "More practice needed"
+          ? `Correct the ${missed.length} missed idea${missed.length === 1 ? "" : "s"}, revisit those exact lessons and retry before the next weekend.`
+          : "Pause progression on the weakest lessons, rebuild their foundations and repeat this Weekend Quiz after correction."
+      : outcome === "Ready to continue"
+        ? "Continue to the next scheduled lesson, then revisit this check during Sunday consolidation."
+        : outcome === "More practice needed"
+          ? `Correct the ${missed.length} missed idea${missed.length === 1 ? "" : "s"}, repeat two similar examples, then retake this check.`
+          : "Re-read the lesson key points, work through one guided example, and retry before moving on independently.";
     const now = new Date();
     const durationSeconds = Math.max(0, Math.min(3600, Math.round((now.getTime() - new Date(session.startedAt).getTime()) / 1000)));
     const subject = resolved?.mode === "weekly" ? "Weekly review" : dailyQuiz.stream.startsWith("Pakistan") ? "Pakistan Studies" : dailyQuiz.stream;
