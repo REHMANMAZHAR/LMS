@@ -1,7 +1,7 @@
 import type { DailyQuizQuestion } from "./daily-quiz-model";
 
 export type PrivateQuestion = Omit<DailyQuizQuestion, "number"> & {
-  answer: string;
+  answer: string; tolerance?: number; estimatedMinutes?: number; sourceReference?: string;
   correctAnswer: string;
   explanation: string;
 };
@@ -260,14 +260,15 @@ export const DAILY_QUIZ_DURATION_SECONDS = 20 * 60;
 export function hasDailyQuiz(taskId: string) { return byTaskId.has(taskId); }
 export function getDailyQuiz(taskId: string) { return byTaskId.get(taskId); }
 export function publicDailyQuestion(question: PrivateQuestion, number: number): DailyQuizQuestion {
-  const { answer: _answer, correctAnswer: _correctAnswer, explanation: _explanation, ...visible } = question;
+  const { answer: _answer, correctAnswer: _correctAnswer, explanation: _explanation, tolerance: _tolerance, ...visible } = question;
   return { ...visible, number };
 }
 function normaliseNumeric(value: string) { return value.trim().replace(/,/g, "").replace(/−/g, "-"); }
 export function markDailyQuestion(question: PrivateQuestion, response: string | undefined) {
   const value = String(response ?? "");
   const correct = question.type === "numeric"
-    ? normaliseNumeric(value) === normaliseNumeric(question.answer)
+    ? Boolean(normaliseNumeric(value)) && Number.isFinite(Number(normaliseNumeric(value))) && Math.abs(Number(normaliseNumeric(value)) - Number(normaliseNumeric(question.answer))) <= (question.tolerance ?? 0)
     : value === question.answer;
   return { questionId: question.id, prompt: question.prompt, response: value, correct, correctAnswer: question.correctAnswer, explanation: question.explanation };
 }
+
