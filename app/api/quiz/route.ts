@@ -17,6 +17,7 @@ import {
   progress,
   quizAttempts,
   quizSessions,
+  settings,
 } from "@/db/schema";
 
 const FAMILY_ID = "talha-family";
@@ -64,18 +65,6 @@ export async function GET(request: Request) {
     }
 
     const db = await getDb();
-    const [topicProgress] = await db
-      .select({ stage: progress.stage })
-      .from(progress)
-      .where(and(eq(progress.familyId, FAMILY_ID), eq(progress.topicId, topicId)))
-      .limit(1);
-    if ((topicProgress?.stage ?? 0) < 1) {
-      return Response.json(
-        { error: "Mark this topic as Learning after studying it, then start the quiz." },
-        { status: 409 },
-      );
-    }
-
     const questions = shuffled(getQuizQuestions(topicId));
     const now = new Date();
     const expiresAt = new Date(now.getTime() + QUIZ_DURATION_SECONDS * 1000);
@@ -183,9 +172,10 @@ export async function POST(request: Request) {
       .from(assessmentAttempts)
       .where(and(eq(assessmentAttempts.familyId, FAMILY_ID), eq(assessmentAttempts.topicId, topic.id)))
       .orderBy(desc(assessmentAttempts.createdAt));
+    const [reopened] = await db.select().from(settings).where(and(eq(settings.familyId, FAMILY_ID), eq(settings.key, `planner.reopened.${topic.id}`))).limit(1);
     const evidence = evidenceForTopic(
       [
-        ...previousAttempts.map((attempt) => ({ ...attempt, topicId: topic.id })),
+        ...previousAttempts.filter((attempt) => !reopened?.value || attempt.createdAt > reopened.value).map((attempt) => ({ ...attempt, topicId: topic.id })),
         { topicId: topic.id, score, maxScore, timed, createdAt: now.toISOString() },
       ],
       topic.id,
@@ -283,3 +273,4 @@ export async function POST(request: Request) {
     return apiError(error);
   }
 }
+
