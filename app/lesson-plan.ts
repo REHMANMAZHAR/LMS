@@ -64,7 +64,7 @@ export const STARTER_LESSONS: Record<LessonStream, StarterLesson[]> = {
 };
 
 /** Exact teachable focuses for the larger post-starter syllabus areas. */
-const TOPIC_FOCUSES: Record<string, string[]> = {
+export const TOPIC_FOCUSES: Record<string, string[]> = {
   "pak-kq3": ["long-term causes of the 1857 War", "immediate causes and outbreak", "main events and regional leadership", "reasons for failure", "political, social and military consequences"],
   "pak-kq4": ["Sir Syed's response after 1857", "educational work and the Aligarh Movement", "political ideas and relations with the British", "Hindi-Urdu controversy and Two-Nation thinking", "overall importance and limitations"],
   "pak-kq5": ["importance and development of Urdu", "Bengali and Punjabi", "Sindhi and Pashto", "Balochi and regional-language promotion", "comparison of government support and cultural importance"],
@@ -148,4 +148,11 @@ export function sundayLesson(stream: LessonStream, previousTitle: string): Guide
     practice: "Re-solve incorrect questions before attempting a fresh mixed set under timed conditions.",
     recall: "Write what improved, what remains difficult and the exact lesson that must return next week.",
   };
+}
+
+
+// The syllabus parent and its named daily lessons share a single searchable identity.
+export function topicLessonTitles(topic: Topic): string[] {
+  const starters = Object.values(STARTER_LESSONS).flat().filter((lesson) => lesson.topicId === topic.id).map((lesson) => lesson.title);
+  return [...new Set([...starters, ...(TOPIC_FOCUSES[topic.id] ?? [])])];
 }
