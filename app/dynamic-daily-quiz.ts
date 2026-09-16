@@ -53,28 +53,44 @@ export async function resolveDailyQuiz(taskId: string): Promise<ResolvedQuiz | u
     startDate.setUTCDate(startDate.getUTCDate()-6);
     const start=startDate.toISOString().slice(0,10);
     const studied=[...new Map(tasks.filter(task=>task.kind==="syllabus" && values[`planner.done.${task.id}`]>=start && values[`planner.done.${task.id}`]<=end).map(task=>[task.id,task])).values()];
-    const questions:PrivateQuestion[]=[];
-    const seen=new Set<string>();
+    const pools:Array<{topicId:string;title:string;questions:PrivateQuestion[];cursor:number}>=[];
     for(const task of studied) {
       const set=resolveOne(task.id);
       if(!set){missingLessons.push(task.lesson.title);continue;}
-      for(const question of set.questions) {
-        const key=`${set.topicId}:${question.id}`;
-        if(seen.has(key))continue;
-        seen.add(key);questions.push({...question,id:key});
+      pools.push({topicId:set.topicId,title:task.lesson.title,questions:set.questions,cursor:0});
+    }
+    const questions:PrivateQuestion[]=[];
+    const seen=new Set<string>();
+    let estimatedMinutes=0;
+    let madeProgress=true;
+    while(madeProgress && estimatedMinutes<60 && questions.length<80) {
+      madeProgress=false;
+      for(const pool of pools) {
+        while(pool.cursor<pool.questions.length) {
+          const question=pool.questions[pool.cursor++];
+          const key=`${pool.topicId}:${question.id}`;
+          if(seen.has(key))continue;
+          seen.add(key);
+          const minutes=Math.max(1,question.estimatedMinutes ?? 1);
+          if(estimatedMinutes+minutes>60)continue;
+          questions.push({...question,id:key});
+          estimatedMinutes+=minutes;
+          madeProgress=true;
+          break;
+        }
+        if(estimatedMinutes>=60 || questions.length>=80)break;
       }
     }
     if(!questions.length)return;
-    if(questions.length>80)missingLessons.push("Question limit reached: some reviewed questions were omitted.");
-    quiz={taskId,stream:"Mathematics",topicId:"weekly",lessonTitle:`Weekly practice: ${start} to ${end}`,questions:questions.slice(0,80)};
+    quiz={taskId,stream:"Mathematics",topicId:"weekly",lessonTitle:`Weekend Quiz: ${start} to ${end}`,questions};
   } else quiz=resolveOne(taskId);
   if(!quiz)return;
   const target=mode==="weekly"?60:20;
   const estimated=quiz.questions.reduce((sum,q)=>sum+(q.estimatedMinutes ?? 1),0);
-  const durationSeconds=Math.min(target,Math.max(1,Math.ceil(estimated)))*60;
+  const durationSeconds=(mode==="weekly" ? 60 : Math.min(target,Math.max(1,Math.ceil(estimated))))*60;
   const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify({quiz,missingLessons,version:DAILY_QUIZ_VERSION})));
   const version=Array.from(new Uint8Array(digest)).map(byte=>byte.toString(16).padStart(2,"0")).join("");
   return {quiz,version,durationSeconds,mode,missingLessons,sourceNote:estimated<target || missingLessons.length
-    ? `Partial practice bank: ${estimated} estimated question minutes available; ${target} minutes is the assessment target. This is not a complete past-paper assessment.`
-    : "Question timings and source references come from the reviewed bank. This is an LMS assessment, not an official Cambridge paper."};
+    ? `The quiz covers every completed lesson for which reviewed questions are available. ${estimated} estimated question minutes were selected; ${target} minutes is reserved for the weekend attempt and review.`
+    : "A balanced 60-minute quiz was assembled from the lessons completed during this week. Source references remain in the controlled bank."};
 }
