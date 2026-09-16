@@ -36,6 +36,7 @@ import { placeRemaining, allowedDay } from "./planner-rules";
 
 import { buildAdaptivePlanner, readManifest, taskTime } from "./adaptive-plan";
 import PastPaperPractice from "./past-paper-practice";
+import OfficialPaperLibrary from "./official-paper-library";
 import WeeklyReview from "./weekly-review";
 import TargetPlanner from "./target-planner";
 import type { PlannedTask } from "./adaptive-plan";
@@ -77,8 +78,8 @@ const TAB_GUIDES: Record<View, TabGuideContent> = {
   tests: {
     purpose: "Records one-hour, whole-topic weekend assessments and turns results into improvement guidance.",
     use: "Complete the assigned paper under timed conditions, mark it strictly, then record marks, time and the main error.",
-    connected: "Syllabus evidence, Secure status, error tracking, revision scheduling and Parent View.",
-    updates: "Updates immediately after a marked attempt is saved; weak areas return for correction and later re-testing.",
+    connected: "Verified exact-code Cambridge papers, matching mark schemes, syllabus evidence, Secure status, error tracking and Parent View.",
+    updates: "The paper catalogue changes only after question-paper/mark-scheme pairing and syllabus-code checks; marked attempts update immediately.",
   },
   parent: {
     purpose: "Gives the parent oversight of consistency, coverage, evidence, recurring errors and quiz-bank publishing.",
@@ -1229,6 +1230,7 @@ export default function StudyDashboard({
         {view === "tests" && (
           <section className="evidence-layout no-top">
             <WeeklyReview tasks={[...planner.tasksById.values()]} settings={settings} today={todayKey} onStart={setDailyQuizTaskId} />
+            <OfficialPaperLibrary />
             <QuizBankSyncCard />
             <div className="diagnostic-grid">
               {SUBJECTS.map((item) => {
