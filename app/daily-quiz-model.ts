@@ -17,6 +17,9 @@ export type DailyQuizSessionPayload = {
   lessonTitle: string;
   durationSeconds: number;
   expiresAt: string;
+  mode?: "daily" | "weekly";
+  missingLessons?: string[];
+  sourceNote?: string;
   questions: DailyQuizQuestion[];
 };
 
@@ -37,4 +40,5 @@ export type DailyQuizResultPayload = {
   guidance: string;
   feedback: DailyQuizFeedback[];
 };
+
 

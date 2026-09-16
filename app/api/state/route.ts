@@ -69,10 +69,12 @@ export async function GET() {
     const archivedCompletions: Record<string, string> = {};
     try {
       const snapshot = backupRows[0]?.snapshotJson ? JSON.parse(backupRows[0].snapshotJson) as {
+        archivedCompletions?: Record<string, string>;
         progress?: Array<{ topicId?: string; lastStudiedAt?: string | null }>;
         activity?: Array<{ topicId?: string | null; kind?: string; createdAt?: string }>;
         assessmentAttempts?: Array<{ topicId?: string | null; createdAt?: string }>;
       } : null;
+      if (snapshot?.archivedCompletions) Object.assign(archivedCompletions, snapshot.archivedCompletions);
       const trustworthyTopicIds = new Set<string>(MAINTENANCE_TOPIC_IDS);
       (snapshot?.activity ?? [])
         .filter((item) => item.kind === "planner_task" && item.topicId)
@@ -88,6 +90,12 @@ export async function GET() {
           ...(snapshot?.assessmentAttempts ?? []).filter((item) => item.topicId === topicId).map((item) => item.createdAt ?? ""),
         ].filter(Boolean).sort();
         if (candidates.length) archivedCompletions[topicId] = candidates[candidates.length - 1];
+      }
+      if (snapshot?.archivedCompletions) {
+        // Later operational backups must not reinterpret a partial task or failed
+        // assessment as a whole-topic completion.
+        Object.keys(archivedCompletions).forEach(key => delete archivedCompletions[key]);
+        Object.assign(archivedCompletions, snapshot.archivedCompletions);
       }
     } catch {
       // A malformed historical snapshot must never prevent the live LMS from loading.
@@ -117,7 +125,7 @@ export async function PATCH(request: Request) {
       const subject = String(payload.subject ?? "").slice(0, 60);
       const stage = Number(payload.stage);
       const minutes = Math.max(0, Math.min(600, Number(payload.minutes ?? 0)));
-      if (!topicId || !Number.isInteger(stage) || stage < 0 || stage > 1) {
+      if (!TOPICS.some((topic) => topic.id === topicId && topic.subject === subject) || !Number.isInteger(stage) || stage < 0 || stage > 1) {
         return Response.json(
           { error: "Learning may be marked manually; Practising and Secure require assessment evidence." },
           { status: 400 },
@@ -141,6 +149,14 @@ export async function PATCH(request: Request) {
             updatedAt: now,
           },
         });
+      // Explicit reopening takes precedence over preserved imported completions.
+      // Historical activity and backup timestamps remain untouched.
+      if (stage === 0) {
+        await db.insert(settings).values({ familyId: FAMILY_ID, key: `planner.reopened.${topicId}`, value: now, updatedAt: now })
+          .onConflictDoUpdate({ target: [settings.familyId, settings.key], set: { value: now, updatedAt: now } });
+      }
+      await db.insert(settings).values({ familyId: FAMILY_ID, key: `planner.partial.${topicId}`, value: "", updatedAt: now })
+        .onConflictDoUpdate({ target: [settings.familyId, settings.key], set: { value: "", updatedAt: now } });
       await db.insert(activity).values({
         familyId: FAMILY_ID,
         topicId,
@@ -194,9 +210,13 @@ export async function PATCH(request: Request) {
     if (actionName === "setting") {
       const key = String(payload.key ?? "");
       const value = String(payload.value ?? "").slice(0, 120);
-      if (!SETTING_KEYS.has(key) && !key.startsWith("planner.")) {
+      if (key === "planner.manifest.v3" || (!SETTING_KEYS.has(key) && !key.startsWith("planner."))) {
         return Response.json({ error: "Invalid setting." }, { status: 400 });
       }
+      if ((key.startsWith("planner.partial.") || key.startsWith("planner.taskPartial.")) && !["", "0", "25", "50", "75"].includes(value)) {
+        return Response.json({ error: "Choose one of the displayed partial-completion levels." }, { status: 400 });
+      }
+      if (key.startsWith("planner.estimate.") && (!Number.isInteger(Number(value)) || Number(value) < 20 || Number(value) > 3000)) return Response.json({error:"Topic estimates must be 20–3000 minutes."},{status:400});
       const now = new Date().toISOString();
       await db
         .insert(settings)
@@ -243,9 +263,10 @@ export async function PATCH(request: Request) {
         .select({ score: assessmentAttempts.score, maxScore: assessmentAttempts.maxScore, timed: assessmentAttempts.timed, createdAt: assessmentAttempts.createdAt })
         .from(assessmentAttempts)
         .where(and(eq(assessmentAttempts.familyId, FAMILY_ID), eq(assessmentAttempts.topicId, topicId)));
+      const [reopened] = await db.select().from(settings).where(and(eq(settings.familyId, FAMILY_ID), eq(settings.key, `planner.reopened.${topicId}`))).limit(1);
       const evidence = evidenceForTopic(
         [
-          ...previousAttempts.map((attempt) => ({ ...attempt, topicId })),
+          ...previousAttempts.filter((attempt) => !reopened?.value || attempt.createdAt > reopened.value).map((attempt) => ({ ...attempt, topicId })),
           { topicId, score, maxScore, timed, createdAt: now },
         ],
         topicId,
@@ -327,3 +348,4 @@ export async function PATCH(request: Request) {
     return errorResponse(error);
   }
 }
+

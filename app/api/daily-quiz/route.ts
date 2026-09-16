@@ -1,7 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { requireFamilySession } from "@/app/family-auth";
 import {
-  DAILY_QUIZ_DURATION_SECONDS,
   markDailyQuestion,
   publicDailyQuestion,
 } from "@/app/daily-quiz-bank";
@@ -13,7 +12,7 @@ const FAMILY_ID = "talha-family";
 
 function safeResponses(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return Object.fromEntries(Object.entries(value).slice(0, 20).map(([key, response]) => [key.slice(0, 80), String(response ?? "").slice(0, 120)]));
+  return Object.fromEntries(Object.entries(value).slice(0, 80).map(([key, response]) => [key.slice(0, 80), String(response ?? "").slice(0, 120)]));
 }
 
 function apiError(error: unknown) {
@@ -29,10 +28,10 @@ export async function GET(request: Request) {
     const taskId = new URL(request.url).searchParams.get("taskId") ?? "";
     const resolved = await resolveDailyQuiz(taskId);
     const dailyQuiz = resolved?.quiz;
-    if (!dailyQuiz) return Response.json({ error: "A reviewed daily check is not available for this lesson yet." }, { status: 404 });
+    if (!dailyQuiz) return Response.json({ error: "No reviewed questions match this lesson or completed week yet. The quiz bank must be populated before a reliable assessment can start. Your study completion is still saved; do not tick unrelated topics to unlock a test." }, { status: 404 });
 
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + DAILY_QUIZ_DURATION_SECONDS * 1000);
+    const expiresAt = new Date(now.getTime() + resolved!.durationSeconds * 1000);
     const sessionId = crypto.randomUUID();
     const db = await getDb();
     await db.insert(quizSessions).values({
@@ -50,7 +49,8 @@ export async function GET(request: Request) {
       taskId,
       stream: dailyQuiz.stream,
       lessonTitle: dailyQuiz.lessonTitle,
-      durationSeconds: DAILY_QUIZ_DURATION_SECONDS,
+      durationSeconds: resolved!.durationSeconds,
+      mode: resolved!.mode, missingLessons: resolved!.missingLessons, sourceNote: resolved!.sourceNote,
       expiresAt: expiresAt.toISOString(),
       questions: dailyQuiz.questions.map((question, index) => publicDailyQuestion(question, index + 1)),
     }, { headers: { "cache-control": "no-store" } });
@@ -101,7 +101,7 @@ export async function POST(request: Request) {
         : "Re-read the lesson key points, work through one guided example, and retry before moving on independently.";
     const now = new Date();
     const durationSeconds = Math.max(0, Math.min(3600, Math.round((now.getTime() - new Date(session.startedAt).getTime()) / 1000)));
-    const subject = dailyQuiz.stream.startsWith("Pakistan") ? "Pakistan Studies" : dailyQuiz.stream;
+    const subject = resolved?.mode === "weekly" ? "Weekly review" : dailyQuiz.stream.startsWith("Pakistan") ? "Pakistan Studies" : dailyQuiz.stream;
 
     await db.batch([
       db.insert(quizAttempts).values({
@@ -124,3 +124,4 @@ export async function POST(request: Request) {
     return apiError(error);
   }
 }
+

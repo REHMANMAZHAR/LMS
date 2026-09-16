@@ -154,7 +154,7 @@ export default function QuizView({
       <aside className="panel quiz-launcher">
         <span className="eyebrow">BUILT-IN TOPIC QUIZZES</span>
         <h2>Prove the learning</h2>
-        <p>Answers are marked automatically. Every subject now has reviewed quiz sets, with a subject-specific passing mark.</p>
+        <p>Answers are marked automatically. This short legacy bank covers selected topics. It is separate from the requested 20-minute daily assessment.</p>
         <label>
           Reviewed topic
           <select value={selectedTopic.id} onChange={(event) => selectTopic(event.target.value)} disabled={Boolean(session && !result)}>
@@ -175,7 +175,7 @@ export default function QuizView({
           <button className="secondary-button" onClick={onOpenSyllabus}>Open Syllabus first</button>
         ) : (
           <button className="primary-button" disabled={busy || Boolean(session && !result)} onClick={() => void startQuiz()}>
-            {busy && !session ? "Preparing quiz…" : session && !result ? "Quiz in progress" : result ? "Start another attempt" : "Start 12-minute quiz"}
+            {busy && !session ? "Preparing quiz…" : session && !result ? "Quiz in progress" : result ? "Start another attempt" : "Start short topic check (12 min)"}
           </button>
         )}
         <div className="quiz-rules">
@@ -275,3 +275,4 @@ export default function QuizView({
     </section>
   );
 }
+

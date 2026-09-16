@@ -1,7 +1,7 @@
 import type { DailyQuizQuestion } from "./daily-quiz-model";
 
 export type PrivateQuestion = Omit<DailyQuizQuestion, "number"> & {
-  answer: string;
+  answer: string; tolerance?: number; estimatedMinutes?: number; sourceReference?: string;
   correctAnswer: string;
   explanation: string;
 };
@@ -24,6 +24,26 @@ const numeric = (id: string, prompt: string, answer: string, explanation: string
 const quiz = (stream: DailyQuiz["stream"], day: number, topicId: string, lessonTitle: string, questions: PrivateQuestion[]): DailyQuiz => ({ taskId: `guided:${stream}:${day}`, stream, topicId, lessonTitle, questions });
 
 const BASE_DAILY_QUIZZES: DailyQuiz[] = [
+  quiz("Mathematics", 101, "math-e2-5", "Simultaneous linear equations", [
+    { ...numeric("mx101a", "Solve x + y = 11 and x − y = 3. Find x.", "7", "Add the equations to get 2x = 14, so x = 7."), estimatedMinutes: 2 },
+    { ...numeric("mx101b", "Solve x + y = 11 and x − y = 3. Find y.", "4", "Substitute x = 7 into x + y = 11, giving y = 4."), estimatedMinutes: 2 },
+    { ...numeric("mx101c", "Solve 2x + y = 13 and x − y = 2. Find x.", "5", "Add the equations to get 3x = 15, so x = 5."), estimatedMinutes: 3 },
+    { ...numeric("mx101d", "For 2x + y = 13 and x − y = 2, find y.", "3", "Substitute x = 5 into x − y = 2, so y = 3."), estimatedMinutes: 2 },
+    { ...choice("mx101e", "Which operation eliminates y from 3x + 2y = 16 and 5x − 2y = 8?", "a", "Add the equations", "The coefficients of y are opposites, so addition eliminates y.", ["Add the equations", "Subtract the second equation", "Multiply both equations by 2", "Divide both equations by y"]), estimatedMinutes: 2 },
+    { ...numeric("mx101f", "Solve 3x + 2y = 16 and 5x − 2y = 8. Find x.", "3", "Adding gives 8x = 24, hence x = 3."), estimatedMinutes: 3 },
+    { ...numeric("mx101g", "For 3x + 2y = 16 and 5x − 2y = 8, find y.", "3.5", "Substitute x = 3: 9 + 2y = 16, so y = 3.5."), estimatedMinutes: 3 },
+    { ...choice("mx101h", "Two adult tickets and one child ticket cost 23 dollars. One adult and two child tickets cost 19 dollars. Which pair models this?", "c", "2a + c = 23 and a + 2c = 19", "Let a be an adult ticket and c a child ticket, then translate each purchase directly.", ["a + c = 23 and 2a + 2c = 19", "2a + 2c = 23 and a + c = 19", "2a + c = 23 and a + 2c = 19", "2a − c = 23 and a − 2c = 19"]), estimatedMinutes: 3 },
+  ]),
+  quiz("Islamiyat", 101, "isl-quran-6", "Major themes: Passages 6–10", [
+    { ...choice("ix101a", "Which theme joins the passages about divine sovereignty and protection?", "b", "God alone has complete authority and care", "The passages direct trust and worship to God as the sole sovereign and protector.", ["Human rulers possess unlimited power", "God alone has complete authority and care", "Created beings control destiny", "Worship depends on material success"]), estimatedMinutes: 2 },
+    { ...choice("ix101b", "A strong answer about a Qur'anic passage should first identify…", "a", "its central teaching about God and human response", "The theme must state both what the passage teaches and how believers should respond.", ["its central teaching about God and human response", "only the length of the passage", "the examiner's personal opinion", "a historical date unrelated to the text"]), estimatedMinutes: 2 },
+    { ...choice("ix101c", "Which response best applies the theme of Tawhid?", "d", "Direct worship, reliance and gratitude to God alone", "Tawhid rejects partners and shapes worship, reliance and gratitude.", ["Treat natural objects as divine", "Rely on charms independently of God", "Separate belief from conduct", "Direct worship, reliance and gratitude to God alone"]), estimatedMinutes: 2 },
+    { ...choice("ix101d", "When explaining divine guidance, which point is most relevant?", "c", "Revelation gives moral direction that believers put into practice", "Guidance connects revealed teaching with decisions and conduct.", ["Guidance removes personal responsibility", "Only scholars need moral guidance", "Revelation gives moral direction that believers put into practice", "Guidance concerns history only"]), estimatedMinutes: 3 },
+    { ...choice("ix101e", "Which example best shows trust in God's protection while retaining responsibility?", "b", "Take sensible precautions and pray for God's help", "Islamic reliance combines responsible action with trust in God.", ["Ignore every danger", "Take sensible precautions and pray for God's help", "Depend only on an object", "Refuse all assistance"]), estimatedMinutes: 3 },
+    { ...choice("ix101f", "Why should a passage answer include a present-day application?", "a", "It shows how the teaching influences Muslim belief and conduct", "Application demonstrates the continuing importance of the passage.", ["It shows how the teaching influences Muslim belief and conduct", "It replaces explanation of the passage", "It avoids using textual evidence", "It makes every answer identical"]), estimatedMinutes: 3 },
+    { ...choice("ix101g", "Which structure is strongest for a theme paragraph?", "c", "Theme, supporting detail, explanation and application", "This order identifies the teaching, supports it and explains its importance.", ["Application only", "Quotation without explanation", "Theme, supporting detail, explanation and application", "Historical biography only"]), estimatedMinutes: 3 },
+    { ...choice("ix101h", "What is the best final check before submitting a passage answer?", "d", "Confirm that each point answers the named theme and its importance", "A focused answer links evidence and explanation to the exact question.", ["Add unrelated facts", "Remove all applications", "Count words only", "Confirm that each point answers the named theme and its importance"]), estimatedMinutes: 2 },
+  ]),
   quiz("Mathematics", 1, "math-e1-1", "Integers, prime numbers, factors, LCM and HCF", [
     choice("m1a", "Which number is prime?", "b", "29", "A prime number has exactly two positive factors.", ["21", "29", "39", "51"]),
     numeric("m1b", "Find the HCF of 24 and 36.", "12", "The common factors have greatest value 12."),
@@ -260,14 +280,14 @@ export const DAILY_QUIZ_DURATION_SECONDS = 20 * 60;
 export function hasDailyQuiz(taskId: string) { return byTaskId.has(taskId); }
 export function getDailyQuiz(taskId: string) { return byTaskId.get(taskId); }
 export function publicDailyQuestion(question: PrivateQuestion, number: number): DailyQuizQuestion {
-  const { answer: _answer, correctAnswer: _correctAnswer, explanation: _explanation, ...visible } = question;
+  const { answer: _answer, correctAnswer: _correctAnswer, explanation: _explanation, tolerance: _tolerance, ...visible } = question;
   return { ...visible, number };
 }
 function normaliseNumeric(value: string) { return value.trim().replace(/,/g, "").replace(/−/g, "-"); }
 export function markDailyQuestion(question: PrivateQuestion, response: string | undefined) {
   const value = String(response ?? "");
   const correct = question.type === "numeric"
-    ? normaliseNumeric(value) === normaliseNumeric(question.answer)
+    ? Boolean(normaliseNumeric(value)) && Number.isFinite(Number(normaliseNumeric(value))) && Math.abs(Number(normaliseNumeric(value)) - Number(normaliseNumeric(question.answer))) <= (question.tolerance ?? 0)
     : value === question.answer;
   return { questionId: question.id, prompt: question.prompt, response: value, correct, correctAnswer: question.correctAnswer, explanation: question.explanation };
 }
