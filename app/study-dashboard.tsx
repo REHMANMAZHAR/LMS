@@ -1157,6 +1157,20 @@ export default function StudyDashboard({
         {view === "syllabus" && (
           <section className="section-block no-top">
 
+            <div className="panel today-syllabus-lessons">
+              <div className="section-heading"><div><span className="eyebrow">TODAY'S SYLLABUS LESSONS</span><h2>The exact work assigned today</h2></div><span className="quiet">These lesson names remain linked to their full Cambridge syllabus topics.</span></div>
+              <div className="today-checklist">{todayTasks.filter((task) => task.kind === "syllabus").map((task) => {
+                const checked = planner.completedTaskIds.has(task.id);
+                const checkOutcome = dailyCheckOutcomeByTask.get(task.id);
+                return <article className={`planner-task ${subjectClass(task.topic.subject)} ${checked ? "done" : ""}`} key={`syllabus-today-${task.id}`}>
+                  <span aria-hidden="true">{checked ? "✓" : "○"}</span>
+                  <span><small>{task.stream} · {task.minutes} min lesson + 20 min check</small><strong>{task.lesson.title}</strong><small>Parent syllabus topic: {task.topic.code} · {task.topic.title}</small>{checkOutcome && <small className="daily-check-status">Latest check: <b>{checkOutcome}</b></small>}</span>
+                  <span className="planner-task-actions"><button type="button" className="daily-check-button" onClick={() => setDailyQuizTaskId(task.id)}>{checkOutcome ? "Retake 20-minute check" : "Start 20-minute check"}</button><button type="button" onClick={() => { setChosenTopicId(task.topic.id); revealTopic(task.topic); }}>Open syllabus topic</button></span>
+                </article>;
+              })}</div>
+              {!todayTasks.some((task) => task.kind === "syllabus") && <EmptyMessage>No syllabus lesson is assigned today.</EmptyMessage>}
+            </div>
+
             <div className="topic-chooser panel" id="learning-path">
               <div className="topic-chooser-head">
                 <div><span className="eyebrow">CHOOSE WHAT TO STUDY</span><h2>Check the learning path first</h2><p>Select any topic. The system shows the foundations Talha has already studied, anything still missing, and the topics that build on it.</p></div>
@@ -1382,4 +1396,3 @@ function ParentView({ progressMap, activity, attempts, stats, settings, required
     <div className="panel subject-table"><div className="section-heading"><div><span className="eyebrow">LEARNING SUPPORT TRACKER</span><h2>Progress, effort and next focus</h2></div><div className="backup-actions"><span className="quiet">Syllabus target: {fullDateLabel(settings.targetDate)}</span><a href="/api/backup">Download progress backup</a></div></div><div className="table-head"><span>Subject</span><span>Workload covered</span><span>Secure</span><span>Effort needed</span><span>Present need / next focus</span></div>{subjectStats.map((item) => { const topicMinutes = TOPICS.filter((topic) => topic.subject === item.subject).reduce((sum, topic) => sum + topic.minutes, 0); const coveredMinutes = TOPICS.filter((topic) => topic.subject === item.subject && (progressMap.get(topic.id)?.stage ?? 0) >= 1).reduce((sum, topic) => sum + topic.minutes, 0); const guidance = item.average ? effortGuidance(item.average, item.topError) : null; return <div className="table-row" key={item.subject}><strong><i style={{ background: SUBJECT_META[item.subject].color }} />{item.subject}</strong><span>{Math.round((coveredMinutes / topicMinutes) * 100)}% <small>weighted by time</small></span><span>{Math.round((item.mastered / item.total) * 100)}% <small>{item.mastered}/{item.total}</small></span><span>{guidance?.effort ?? "Starting check"}</span><span><b className={`track-pill ${item.track === "Secure progress" ? "good" : item.track === "Focused support" ? "low" : "mid"}`}>{item.track}</b><small>{item.topError}</small></span></div>; })}</div>
   </section>;
 }
-
