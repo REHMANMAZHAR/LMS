@@ -11,6 +11,14 @@ export default function DailyQuizView({ taskId, onClose, onCompleted }: Props) {
   const [result, setResult] = useState<DailyQuizResultPayload | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
+  const [remaining, setRemaining] = useState(0);
+  useEffect(() => {
+    if (!session || result) return;
+    const update = () => setRemaining(Math.max(0, Math.ceil((Date.parse(session.expiresAt) - Date.now()) / 1000)));
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [session, result]);
 
   useEffect(() => {
     let active = true;
@@ -49,7 +57,7 @@ export default function DailyQuizView({ taskId, onClose, onCompleted }: Props) {
       {busy && !session && <div className="daily-quiz-loading"><strong>Preparing the reviewed daily check…</strong></div>}
       {error && !session && <div className="quiz-error" role="alert">{error}</div>}
       {session && !result && <form onSubmit={submit}>
-        <header><span className="eyebrow">{session.stream} · DAILY CHECK</span><h2>{session.lessonTitle}</h2><p>{session.questions.length} focused questions check today&apos;s exact lesson. This result guides the next effort; it does not mark the whole syllabus topic secure.</p></header>
+        <header><span className="eyebrow">{session.mode === "weekly" ? "ALL STUDIED SUBJECTS · WEEKLY PRACTICE" : `${session.stream} · LESSON PRACTICE`}</span><h2>{session.lessonTitle}</h2><strong role="timer">{Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, "0")} remaining</strong>{remaining === 0 && <p>Time is up. You can still submit for feedback; this attempt will be recorded as untimed.</p>}<p>{session.sourceNote}</p>{Boolean(session.missingLessons?.length) && <details><summary>{session.missingLessons!.length} lessons still need reviewed questions</summary><ul>{session.missingLessons!.map((title,index)=><li key={index}>{title}</li>)}</ul></details>}<p>{session.questions.length} focused questions from the available matched bank. This result guides the next effort; it does not mark the whole syllabus topic secure.</p></header>
         <div className="daily-question-list">{session.questions.map((question) => <fieldset key={question.id} className="quiz-question">
           <legend><span>{question.number}</span>{question.prompt}</legend>
           {question.type === "choice" ? <div className="quiz-options">{question.options?.map((option) => <label key={option.id} className={responses[question.id] === option.id ? "selected" : ""}><input type="radio" name={question.id} value={option.id} checked={responses[question.id] === option.id} onChange={(event) => setResponses((current) => ({ ...current, [question.id]: event.target.value }))} /><span>{option.label}</span></label>)}</div> : <label className="quiz-numeric-answer"><span>Your answer</span><div><input inputMode="decimal" value={responses[question.id] ?? ""} onChange={(event) => setResponses((current) => ({ ...current, [question.id]: event.target.value }))} placeholder={question.placeholder} />{question.answerSuffix && <b>{question.answerSuffix}</b>}</div></label>}
@@ -65,3 +73,4 @@ export default function DailyQuizView({ taskId, onClose, onCompleted }: Props) {
     </div>
   </div>;
 }
+
