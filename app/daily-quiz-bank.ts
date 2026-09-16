@@ -228,6 +228,56 @@ const BASE_DAILY_QUIZZES: DailyQuiz[] = [
 // Two additional syllabus-focused questions make every daily check a useful
 // five-question retrieval exercise without changing the lessons themselves.
 const SUPPLEMENTAL_QUESTIONS: Record<string, PrivateQuestion[]> = {
+  "guided:Mathematics:101": [
+    {
+      ...choice(
+        "mx101pp1",
+        "For 4y + 3x = 13 and y = x² − 18, which quadratic is obtained after eliminating y?",
+        "b",
+        "4x² + 3x − 85 = 0",
+        "Substitute y = x² − 18 into 4y + 3x = 13 and simplify.",
+        ["4x² − 3x − 85 = 0", "4x² + 3x − 85 = 0", "x² + 3x − 5 = 0", "4x² + 3x + 85 = 0"],
+      ),
+      estimatedMinutes: 5,
+      sourceReference: "Cambridge IGCSE Mathematics 0580/22/M/J/24 Q21, adapted for auto-marking",
+    },
+    {
+      ...choice(
+        "mx101pp2",
+        "Solve 4y + 3x = 13 and y = x² − 18. Which two ordered pairs (x, y) are correct?",
+        "a",
+        "(−5, 7) and (17/4, 1/16)",
+        "The resulting quadratic factors to give x = −5 or 17/4; substitution gives y = 7 or 1/16.",
+        ["(−5, 7) and (17/4, 1/16)", "(5, −7) and (4, 1)", "(−5, 1/16) and (17/4, 7)", "(2, 1) and (4, 5)"],
+      ),
+      estimatedMinutes: 6,
+      sourceReference: "Cambridge IGCSE Mathematics 0580/22/M/J/24 Q21, adapted for auto-marking",
+    },
+    {
+      ...choice(
+        "mx101pp3",
+        "For y = x² − 4x + 5 and y = 2x − 3, which equation is formed by equating the expressions for y?",
+        "c",
+        "x² − 6x + 8 = 0",
+        "Set x² − 4x + 5 equal to 2x − 3 and bring every term to one side.",
+        ["x² − 2x + 2 = 0", "x² + 6x + 8 = 0", "x² − 6x + 8 = 0", "x² − 4x + 2 = 0"],
+      ),
+      estimatedMinutes: 4,
+      sourceReference: "Cambridge IGCSE Mathematics 0580/42/O/N/24 Q3(d), adapted for auto-marking",
+    },
+    {
+      ...choice(
+        "mx101pp4",
+        "Solve y = x² − 4x + 5 and y = 2x − 3. Which two ordered pairs (x, y) are correct?",
+        "d",
+        "(2, 1) and (4, 5)",
+        "x² − 6x + 8 = 0 factors to (x − 2)(x − 4) = 0; substitute into y = 2x − 3.",
+        ["(−2, 1) and (−4, 5)", "(2, 5) and (4, 1)", "(1, 2) and (5, 4)", "(2, 1) and (4, 5)"],
+      ),
+      estimatedMinutes: 5,
+      sourceReference: "Cambridge IGCSE Mathematics 0580/42/O/N/24 Q3(d), adapted for auto-marking",
+    },
+  ],
   "guided:Mathematics:1": [numeric("m1d", "Find the HCF of 42 and 70.", "14", "The greatest factor common to both numbers is 14."), numeric("m1e", "Find the LCM of 8 and 20.", "40", "The first common multiple is 40.")],
   "guided:Mathematics:2": [choice("m2d", "Write 0.45 as a fraction in simplest form.", "b", "9/20", "0.45 = 45/100 = 9/20.", ["4/5", "9/20", "45/10", "5/9"]), choice("m2e", "Which fraction equals 0.\u03053?", "c", "1/3", "The recurring decimal 0.333… equals one third.", ["3/10", "3/11", "1/3", "1/30"])],
   "guided:Mathematics:3": [numeric("m3d", "Find √225.", "15", "15 × 15 = 225."), numeric("m3e", "Find ∛343.", "7", "7 × 7 × 7 = 343.")],
@@ -275,7 +325,7 @@ export const DAILY_QUIZZES: DailyQuiz[] = BASE_DAILY_QUIZZES.map((item) => ({
 }));
 
 const byTaskId = new Map(DAILY_QUIZZES.map((item) => [item.taskId, item]));
-export const DAILY_QUIZ_VERSION = "daily-check-v2";
+export const DAILY_QUIZ_VERSION = "daily-check-v3-weekend-topical";
 export const DAILY_QUIZ_DURATION_SECONDS = 20 * 60;
 export function hasDailyQuiz(taskId: string) { return byTaskId.has(taskId); }
 export function getDailyQuiz(taskId: string) { return byTaskId.get(taskId); }
