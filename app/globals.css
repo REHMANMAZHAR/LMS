@@ -208,8 +208,11 @@ a { color:inherit; }
 .quiz-feedback-list { display:grid; gap:9px; }
 .quiz-feedback-list article { display:grid; grid-template-columns:34px 1fr; gap:11px; border:1px solid #e2dcd1; border-left:4px solid #50a08f; border-radius:13px; padding:14px; }
 .quiz-feedback-list article.incorrect { border-left-color:#c7745c; background:#fffaf7; }
+.quiz-feedback-list article.skipped { border-left-color:#b18a45; background:#fff8e8; }
+.quiz-skip-note { border-left:3px solid #b18a45; padding:8px 10px; background:#fff8e8; border-radius:0 8px 8px 0; color:#6b572f; font-size:12px; line-height:1.45; }
 .feedback-mark { width:30px; height:30px; display:grid; place-items:center; border-radius:50%; background:#ddefe9; color:#176951; font-size:16px; font-weight:800; }
 .incorrect .feedback-mark { background:#f5dfd8; color:#994c39; }
+.skipped .feedback-mark { background:#f3e4bd; color:#765c20; }
 .quiz-feedback-list span { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.6px; }
 .quiz-feedback-list h3 { margin:5px 0 8px; font-size:14px; line-height:1.4; }
 .quiz-feedback-list p { margin:4px 0 0; color:#5f706b; font-size:13px; line-height:1.5; }

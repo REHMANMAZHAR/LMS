@@ -137,11 +137,22 @@ type ActivityItem = {
   note: string | null;
   createdAt: string;
 };
+type QuizAttemptItem = {
+  id: number;
+  sessionId: string;
+  topicId: string;
+  subject: string;
+  score: number;
+  maxScore: number;
+  errorSummary: string | null;
+  createdAt: string;
+};
 type FamilyState = {
   progress: ProgressItem[];
   settings: Record<string, string>;
   activity: ActivityItem[];
   attempts: AssessmentAttempt[];
+  quizAttempts: QuizAttemptItem[];
   archivedCompletions: Record<string, string>;
 };
 type Stats = {
@@ -220,6 +231,7 @@ const EMPTY_STATE: FamilyState = {
   settings: DEFAULT_SETTINGS,
   activity: [],
   attempts: [],
+  quizAttempts: [],
   archivedCompletions: {},
 };
 
@@ -496,6 +508,7 @@ export default function StudyDashboard({
         progress: data.progress ?? [],
         activity: data.activity ?? [],
         attempts: data.attempts ?? [],
+        quizAttempts: data.quizAttempts ?? [],
         archivedCompletions: data.archivedCompletions ?? {},
         settings: { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) },
       });
@@ -1308,7 +1321,7 @@ export default function StudyDashboard({
           </section>
         )}
 
-        {view === "parent" && <ParentView progressMap={progressMap} activity={familyState.activity} attempts={familyState.attempts} stats={stats} settings={settings} requiredDaily={requiredDaily} />}
+        {view === "parent" && <ParentView progressMap={progressMap} activity={familyState.activity} attempts={familyState.attempts} quizAttempts={familyState.quizAttempts} stats={stats} settings={settings} requiredDaily={requiredDaily} />}
       </main>
       {dailyQuizTaskId && <DailyQuizView taskId={dailyQuizTaskId} onClose={() => setDailyQuizTaskId(null)} onCompleted={handleDailyQuizCompleted} />}
     </div>
@@ -1343,7 +1356,7 @@ function QuizBankSyncCard() {
   return <div className="panel"><div className="section-heading"><div><span className="eyebrow">CONTROLLED QUIZ BANK</span><h2>Google Sheet publishing</h2></div><a href="https://docs.google.com/spreadsheets/d/1IFCOQogNrT9UhwzjLjIzZlLxwqVtQ8_NOsrQfrGSEXI/edit" target="_blank" rel="noreferrer">Open question editor</a></div><p>{status}</p><button type="button" onClick={() => void syncNow()} disabled={syncing}>{syncing ? "Checking..." : "Validate and sync approved rows"}</button><p className="panel-note">Only valid Approved rows publish. Questions are matched by task identity or exact topic and lesson title; unrelated lessons are never substituted. Draft and Reviewed rows stay unpublished. Any invalid Approved row cancels the import and preserves the working bank.</p></div>;
 }
 
-function ParentView({ progressMap, activity, attempts, stats, settings, requiredDaily }: { progressMap: Map<string, ProgressItem>; activity: ActivityItem[]; attempts: AssessmentAttempt[]; stats: Stats; settings: Record<string, string>; requiredDaily: number }) {
+function ParentView({ progressMap, activity, attempts, quizAttempts, stats, settings, requiredDaily }: { progressMap: Map<string, ProgressItem>; activity: ActivityItem[]; attempts: AssessmentAttempt[]; quizAttempts: QuizAttemptItem[]; stats: Stats; settings: Record<string, string>; requiredDaily: number }) {
   const recent = Array.from({ length: 7 }, (_, offset) => {
     const date = new Date(); date.setDate(date.getDate() - (6 - offset));
     const key = date.toISOString().slice(0, 10);
@@ -1386,12 +1399,26 @@ function ParentView({ progressMap, activity, attempts, stats, settings, required
   });
   const leadingErrors = [...errorCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
   const recentDailyChecks = activity.filter((item) => item.kind === "daily-check").slice(0, 10);
+  const adaptiveEvidence = quizAttempts.slice(0, 20).reduce((summary, attempt) => {
+    const wrong = Number(attempt.errorSummary?.match(/wrong=(\d+)/)?.[1] ?? 0);
+    const skipped = Number(attempt.errorSummary?.match(/skipped=(\d+)/)?.[1] ?? 0);
+    summary.wrong += wrong;
+    summary.skipped += skipped;
+    if (wrong || skipped) summary.needsReview += 1;
+    return summary;
+  }, { wrong: 0, skipped: 0, needsReview: 0 });
+  const adaptiveMessage = adaptiveEvidence.skipped
+    ? `${adaptiveEvidence.skipped} skipped question${adaptiveEvidence.skipped === 1 ? "" : "s"} should be revisited before treating those ideas as secure.`
+    : adaptiveEvidence.wrong
+      ? `${adaptiveEvidence.wrong} wrong answer${adaptiveEvidence.wrong === 1 ? "" : "s"} remain in the recent adaptive review queue.`
+      : "No skipped or wrong adaptive-check evidence is currently waiting for attention.";
   return <section className="parent-layout no-top">
     <QuizBankSyncCard />
     <div className="metrics-row"><article><span>Syllabus covered</span><strong>{stats.coverage}%</strong><small>{stats.learned} of {stats.total} topics</small></article><article><span>Evidence Secure</span><strong>{stats.mastery}%</strong><small>{stats.mastered} topics with proof</small></article><article><span>Evidence readiness</span><strong>{stats.readiness}%</strong><small>not a predicted grade</small></article><article><span>Daily checks recorded</span><strong>{activity.filter((item) => item.kind === "daily-check").length}</strong><small>{stats.timedEvidence} timed exam attempts</small></article></div>
     <div className="parent-grid"><div className="panel activity-panel"><div className="section-heading"><div><span className="eyebrow">LAST 7 DAYS</span><h2>Study consistency</h2></div><strong>{recent.reduce((sum, day) => sum + day.minutes, 0)} min</strong></div><div className="weekly-bars">{recent.map((day) => <div key={day.key}><div className="bar-track"><span style={{ height: `${Math.max(4, (day.minutes / maxMinutes) * 100)}%` }}><b>{day.minutes || ""}</b></span></div><small>{day.label}</small></div>)}</div><p className="panel-note">Daily target currently requires approximately <strong>{requiredDaily} minutes</strong> on each study day.</p></div>
       <div className="panel alert-panel"><span className="eyebrow">PARENT ATTENTION</span><h2>{overdue.length ? `${overdue.length} recalls are overdue` : "Recall schedule is clear"}</h2>{leadingErrors.length ? <><p>Most frequent sources of lost marks:</p><ul>{leadingErrors.map(([error, count]) => <li key={error}><span>{count}×</span><div><strong>{error}</strong><small>Use the correction note, then re-test on a different date.</small></div></li>)}</ul></> : overdue.length ? <ul>{overdue.slice(0, 4).map((topic) => <li key={topic.id}><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><div><strong>{topic.title}</strong><small>Last studied {dateLabel(progressMap.get(topic.id)?.lastStudiedAt)}</small></div></li>)}</ul> : <p>Run the four subject diagnostics to reveal the first performance priorities.</p>}</div></div>
     <div className="panel daily-check-history"><div className="section-heading"><div><span className="eyebrow">RECENT DAILY CHECKS</span><h2>What needs to happen next</h2></div><span className="quiet">Effort guidance—not grades</span></div><div className="daily-check-history-list">{recentDailyChecks.length ? recentDailyChecks.map((item) => <article key={item.id}><div><strong>{dailyCheckOutcome(item.note) ?? "Check completed"}</strong><small>{item.subject ?? "Study lesson"} · {dateLabel(item.createdAt)}</small></div><p>{dailyCheckSummary(item.note)}</p></article>) : <EmptyMessage>Daily-check guidance will appear here after Talha completes a lesson check.</EmptyMessage>}</div></div>
+    <div className="panel adaptive-evidence-panel"><div className="section-heading"><div><span className="eyebrow">ADAPTIVE REVIEW QUEUE</span><h2>Wrong and skipped evidence</h2></div><strong>{adaptiveEvidence.needsReview} recent attempt{adaptiveEvidence.needsReview === 1 ? "" : "s"} need review</strong></div><div className="metrics-row compact"><article><span>Wrong</span><strong>{adaptiveEvidence.wrong}</strong><small>attempted but incorrect</small></article><article><span>Skipped</span><strong>{adaptiveEvidence.skipped}</strong><small>not attempted</small></article><article><span>Question selection</span><strong>Adaptive</strong><small>weak → unseen → seen</small></article><article><span>Next action</span><strong>{adaptiveEvidence.wrong || adaptiveEvidence.skipped ? "Re-test" : "Continue"}</strong><small>based on saved evidence</small></article></div><p className="panel-note">{adaptiveMessage}</p></div>
     <div className="panel subject-table"><div className="section-heading"><div><span className="eyebrow">LEARNING SUPPORT TRACKER</span><h2>Progress, effort and next focus</h2></div><div className="backup-actions"><span className="quiet">Syllabus target: {fullDateLabel(settings.targetDate)}</span><a href="/api/backup">Download progress backup</a></div></div><div className="table-head"><span>Subject</span><span>Workload covered</span><span>Secure</span><span>Effort needed</span><span>Present need / next focus</span></div>{subjectStats.map((item) => { const topicMinutes = TOPICS.filter((topic) => topic.subject === item.subject).reduce((sum, topic) => sum + topic.minutes, 0); const coveredMinutes = TOPICS.filter((topic) => topic.subject === item.subject && (progressMap.get(topic.id)?.stage ?? 0) >= 1).reduce((sum, topic) => sum + topic.minutes, 0); const guidance = item.average ? effortGuidance(item.average, item.topError) : null; return <div className="table-row" key={item.subject}><strong><i style={{ background: SUBJECT_META[item.subject].color }} />{item.subject}</strong><span>{Math.round((coveredMinutes / topicMinutes) * 100)}% <small>weighted by time</small></span><span>{Math.round((item.mastered / item.total) * 100)}% <small>{item.mastered}/{item.total}</small></span><span>{guidance?.effort ?? "Starting check"}</span><span><b className={`track-pill ${item.track === "Secure progress" ? "good" : item.track === "Focused support" ? "low" : "mid"}`}>{item.track}</b><small>{item.topError}</small></span></div>; })}</div>
   </section>;
 }

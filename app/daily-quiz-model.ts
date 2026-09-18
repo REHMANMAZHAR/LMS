@@ -27,6 +27,7 @@ export type DailyQuizFeedback = {
   questionId: string;
   prompt: string;
   response: string;
+  status: "correct" | "wrong" | "skipped";
   correct: boolean;
   correctAnswer: string;
   explanation: string;

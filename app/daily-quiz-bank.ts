@@ -337,8 +337,10 @@ export function publicDailyQuestion(question: PrivateQuestion, number: number): 
 function normaliseNumeric(value: string) { return value.trim().replace(/,/g, "").replace(/−/g, "-"); }
 export function markDailyQuestion(question: PrivateQuestion, response: string | undefined) {
   const value = String(response ?? "");
-  const correct = question.type === "numeric"
+  const skipped = !value.trim();
+  const correct = !skipped && (question.type === "numeric"
     ? Boolean(normaliseNumeric(value)) && Number.isFinite(Number(normaliseNumeric(value))) && Math.abs(Number(normaliseNumeric(value)) - Number(normaliseNumeric(question.answer))) <= (question.tolerance ?? 0)
-    : value === question.answer;
-  return { questionId: question.id, prompt: question.prompt, response: value, correct, correctAnswer: question.correctAnswer, explanation: question.explanation };
+    : value === question.answer);
+  const status = skipped ? "skipped" : correct ? "correct" : "wrong";
+  return { questionId: question.id, prompt: question.prompt, response: value, status, correct, correctAnswer: question.correctAnswer, explanation: question.explanation };
 }
