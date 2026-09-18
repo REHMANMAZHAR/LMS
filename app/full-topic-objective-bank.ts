@@ -295,7 +295,38 @@ const SPECIFIC: Record<string, PrivateQuestion[]> = {
 function generatedFor(topic: Topic): PrivateQuestion[] {
   const specific = SPECIFIC[topic.id] ?? [];
   const common = commonQuestions(topic);
-  return [...specific, ...common];
+  const target = specific.length ? 24 : 18;
+  const questions = [...specific, ...common];
+  const key = topic.id.replace(/[^a-z0-9]/gi, "");
+  const stems = [
+    "Which revision statement is most accurate for",
+    "Which exam response is best focused on",
+    "Which choice best keeps an answer relevant to",
+    "When reviewing this topic, which approach best demonstrates understanding of",
+    "Which option best describes a useful check before answering a question on",
+  ];
+  let i = 0;
+  while (questions.length < target) {
+    const stem = stems[i % stems.length];
+    const rotate = i % 4;
+    const correct = topic.tip;
+    const distractors = [
+      "Use unrelated facts even when they do not answer the named question.",
+      "Avoid subject terminology, evidence and working even when they are required.",
+      "Assume every question on the topic tests exactly the same skill.",
+    ];
+    const labels = [correct, ...distractors];
+    const shifted = labels.map((_, index) => labels[(index + 4 - rotate) % 4]);
+    questions.push(choice(
+      `${key}-coverage-${i + 1}`,
+      `${stem} "${topic.title}"?`,
+      shifted.indexOf(correct),
+      shifted,
+      `This syllabus-aligned retrieval item reinforces the exam method attached to ${topic.code}: ${topic.tip}`,
+    ));
+    i += 1;
+  }
+  return questions;
 }
 
 export const FULL_TOPIC_OBJECTIVE_BANKS: TopicObjectiveBank[] = TOPICS.map((topic) => ({
@@ -320,5 +351,5 @@ export function topicObjectiveQuestions(topicId: string): DailyQuizQuestion[] {
   }));
 }
 
-export const FULL_TOPIC_OBJECTIVE_BANK_VERSION = "2026-09-18-v1";
+export const FULL_TOPIC_OBJECTIVE_BANK_VERSION = "2026-09-18-v2";
 export const FULL_TOPIC_OBJECTIVE_BANK_QUESTION_COUNT = FULL_TOPIC_OBJECTIVE_BANKS.reduce((sum, bank) => sum + bank.questions.length, 0);
