@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { activity, assessmentAttempts, progress, settings, systemBackups } from "@/db/schema";
+import { activity, assessmentAttempts, progress, settings, systemBackups, quizAttempts } from "@/db/schema";
 import { requireFamilySession } from "@/app/family-auth";
 import { SUBJECTS, TOPICS, type SubjectName } from "@/app/data";
 import {
@@ -43,7 +43,7 @@ export async function GET() {
   try {
     await requireApiUser();
     const db = await getDb();
-    const [progressRows, settingRows, activityRows, attemptRows, backupRows] = await Promise.all([
+    const [progressRows, settingRows, activityRows, attemptRows, quizAttemptRows, backupRows] = await Promise.all([
       db.select().from(progress).where(eq(progress.familyId, FAMILY_ID)),
       db.select().from(settings).where(eq(settings.familyId, FAMILY_ID)),
       db
@@ -58,6 +58,12 @@ export async function GET() {
         .where(eq(assessmentAttempts.familyId, FAMILY_ID))
         .orderBy(desc(assessmentAttempts.createdAt), desc(assessmentAttempts.id))
         .limit(240),
+      db
+        .select()
+        .from(quizAttempts)
+        .where(eq(quizAttempts.familyId, FAMILY_ID))
+        .orderBy(desc(quizAttempts.createdAt), desc(quizAttempts.id))
+        .limit(120),
       db
         .select()
         .from(systemBackups)
@@ -106,6 +112,7 @@ export async function GET() {
       settings: Object.fromEntries(settingRows.map((row) => [row.key, row.value])),
       activity: activityRows,
       attempts: attemptRows,
+      quizAttempts: quizAttemptRows,
       archivedCompletions,
     });
   } catch (error) {
