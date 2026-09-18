@@ -508,6 +508,7 @@ export default function StudyDashboard({
         progress: data.progress ?? [],
         activity: data.activity ?? [],
         attempts: data.attempts ?? [],
+        quizAttempts: data.quizAttempts ?? [],
         archivedCompletions: data.archivedCompletions ?? {},
         settings: { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) },
       });
