@@ -7,6 +7,7 @@ import {
 import { resolveDailyQuiz } from "@/app/dynamic-daily-quiz";
 import { getDb } from "@/db";
 import { activity, quizAttempts, quizSessions } from "@/db/schema";
+import { TOPICS } from "@/app/data";
 
 const FAMILY_ID = "talha-family";
 
@@ -156,12 +157,20 @@ export async function POST(request: Request) {
     const skipped = feedback.filter((item) => item.status === "skipped");
     const wrong = feedback.filter((item) => item.status === "wrong");
     const missed = [...wrong, ...skipped];
+    const weakTopicIds = resolved?.mode === "weekly"
+      ? [...new Set(missed.map((item) => item.questionId.split(":")[0]).filter(Boolean))]
+      : [];
+    const weakTopicNames = weakTopicIds
+      .map((id) => TOPICS.find((topic) => topic.id === id)?.title)
+      .filter((title): title is string => Boolean(title))
+      .slice(0, 3);
+    const weakTopicText = weakTopicNames.length ? ` Focus next on: ${weakTopicNames.join("; ")}.` : "";
     const guidance = resolved?.mode === "weekly"
       ? outcome === "Ready to continue"
         ? "The week’s learning is on track. Review every correction, then continue with next week’s plan."
         : outcome === "More practice needed"
-          ? `Review ${wrong.length} wrong and ${skipped.length} skipped question${wrong.length + skipped.length === 1 ? "" : "s"}, revisit those exact lessons and retry before the next weekend.`
-          : "Pause progression on the weakest lessons, rebuild their foundations and repeat this Weekend Quiz after correction."
+          ? `Review ${wrong.length} wrong and ${skipped.length} skipped question${wrong.length + skipped.length === 1 ? "" : "s"}, revisit those exact lessons and retry before the next weekend.${weakTopicText}`
+          : `Pause progression on the weakest lessons, rebuild their foundations and repeat this Weekend Quiz after correction.${weakTopicText}`
       : outcome === "Ready to continue"
         ? "Continue to the next scheduled lesson, then revisit this check during Sunday consolidation."
         : outcome === "More practice needed"
