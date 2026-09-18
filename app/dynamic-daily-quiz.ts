@@ -4,6 +4,7 @@ import { quizBankQuestions, settings } from "@/db/schema";
 import { DAILY_QUIZ_VERSION, DAILY_QUIZZES, getDailyQuiz, type DailyQuiz, type PrivateQuestion } from "./daily-quiz-bank";
 import { lessonIdentity, normaliseLessonTitle } from "./lesson-identity";
 import { readManifest } from "./adaptive-plan";
+import { getTopicObjectiveBank } from "./full-topic-objective-bank";
 
 const FAMILY_ID = "talha-family";
 type BankRow = typeof quizBankQuestions.$inferSelect;
@@ -41,7 +42,14 @@ export async function resolveDailyQuiz(taskId: string): Promise<ResolvedQuiz | u
     if(imported)return imported;
     const matches=identity?DAILY_QUIZZES.filter(quiz=>quiz.topicId===identity.topicId && normaliseLessonTitle(quiz.lessonTitle)===normaliseLessonTitle(identity.title)):[];
     const original=getDailyQuiz(id) ?? (matches.length===1?matches[0]:undefined);
-    return original?{...original,taskId:id}:undefined;
+    if (original) return {...original,taskId:id};
+    if (identity) {
+      const fallback=getTopicObjectiveBank(identity.topicId);
+      if (fallback?.questions.length) {
+        return {taskId:id,stream:fallback.stream,topicId:fallback.topicId,lessonTitle:identity.title,questions:fallback.questions};
+      }
+    }
+    return undefined;
   }
   let quiz: DailyQuiz | undefined;
   const missingLessons:string[]=[];
