@@ -295,7 +295,11 @@ const SPECIFIC: Record<string, PrivateQuestion[]> = {
 function generatedFor(topic: Topic): PrivateQuestion[] {
   const specific = SPECIFIC[topic.id] ?? [];
   const common = commonQuestions(topic);
-  const target = specific.length ? 24 : 18;
+  // Content-depth sprint: give every syllabus topic a larger retrieval pool.
+  // Topic-specific authored questions remain the preferred first layer; the generated
+  // extension is explicitly exam-skill practice and must not be treated as a substitute
+  // for verified Cambridge past-paper items.
+  const target = specific.length ? 30 : 30;
   const questions = [...specific, ...common];
   const key = topic.id.replace(/[^a-z0-9]/gi, "");
   const stems = [
