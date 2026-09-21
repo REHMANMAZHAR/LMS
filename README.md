@@ -11,7 +11,7 @@ A private, independently hosted Cambridge IGCSE study tracker for Talha.
 - adaptive daily missions for recall, priority learning, exam practice and correction
 - diagnostics, assessment types, paper/component tracking and lost-mark categories
 - built-in, automatically marked topic quizzes with server-only answer keys and correction feedback
-- 160 reviewed questions across 20 priority topics: five quiz sets each for Chemistry, Mathematics, Pakistan Studies and Islamiyat
+- a full-topic objective bank generated for all 207 syllabus topics, with a clearly separated substantive-question layer and a coverage-floor layer; the bank exposes auditable topic/subject/question counts
 - zero-API Study Tools for topic-specific Google, YouTube and official Cambridge searches
 - focused copy-and-paste tutor prompts for ChatGPT, Gemini and NotebookLM, with no AI request made by the LMS
 - a parent A* tracker with evidence readiness, consistency, subject status and next focus
@@ -40,9 +40,10 @@ Requirements: Node.js 22 or newer and a Cloudflare account.
 Never commit `.dev.vars`, an access code, a signing secret, or a Cloudflare API
 token. The repository ignores local secret files.
 
-Run `npm test` before deployment. It checks TypeScript, linting, all 160 quiz
-answer keys, fraction and percentage input, idempotent D1 initialization, and
-the production build. `npm run test:quizzes` is an optional local Cloudflare
+Run `npm test` before deployment. It checks TypeScript, linting, the production
+build, and the full application compile path. The objective bank also exposes
+runtime coverage statistics so substantive authored questions are not confused
+with the syllabus-coverage floor. `npm run test:quizzes` is an optional local Cloudflare
 integration test that exercises family login, quiz submission, D1 sync,
 evidence promotion, duplicate protection, and backup creation.
 
@@ -109,3 +110,15 @@ The v3 backup also includes detailed built-in quiz attempts and corrections.
 ## Production deployment
 
 Cloudflare Workers Builds is connected to this repository. The production Worker builds and deploys from the `main` branch; feature branches create non-production versions for review.
+
+
+## Assessment-bank quality policy
+
+The LMS now distinguishes two kinds of objective-bank coverage:
+
+- **Substantive questions** — authored knowledge/application questions intended to test the actual syllabus content.
+- **Coverage-floor questions** — lightweight syllabus-scope/exam-method checks used so every mapped topic has an immediately usable daily-check pool.
+
+Coverage-floor questions are not presented as equivalent to full Cambridge-style content practice. Weekend assessment resolution prefers controlled/imported or authored topic questions when available and reports missing reviewed coverage rather than silently inventing past-paper evidence.
+
+The long-term authoring target is to keep expanding substantive questions topic-by-topic, with higher-value topics receiving larger pools and original Cambridge-aligned structured questions added for weekend work. Past-paper references are recorded only when they are actually verified; the LMS does not invent paper/session/question citations or copy complete copyrighted papers.
