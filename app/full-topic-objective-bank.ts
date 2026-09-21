@@ -353,3 +353,22 @@ export function topicObjectiveQuestions(topicId: string): DailyQuizQuestion[] {
 
 export const FULL_TOPIC_OBJECTIVE_BANK_VERSION = "2026-09-18-v2";
 export const FULL_TOPIC_OBJECTIVE_BANK_QUESTION_COUNT = FULL_TOPIC_OBJECTIVE_BANKS.reduce((sum, bank) => sum + bank.questions.length, 0);
+
+export const FULL_TOPIC_OBJECTIVE_BANK_TOPIC_COUNT = FULL_TOPIC_OBJECTIVE_BANKS.length;
+
+export const FULL_TOPIC_OBJECTIVE_BANK_STATS = FULL_TOPIC_OBJECTIVE_BANKS.reduce(
+  (stats, bank) => {
+    stats.byStream[bank.stream] = (stats.byStream[bank.stream] ?? 0) + bank.questions.length;
+    const substantive = bank.questions.filter((question) => !question.id.includes("-coverage-"));
+    stats.substantiveQuestions += substantive.length;
+    stats.coverageFloorQuestions += bank.questions.length - substantive.length;
+    if (substantive.length) stats.topicsWithSubstantiveCoverage += 1;
+    return stats;
+  },
+  {
+    byStream: {} as Record<SubjectStream, number>,
+    substantiveQuestions: 0,
+    coverageFloorQuestions: 0,
+    topicsWithSubstantiveCoverage: 0,
+  },
+);
