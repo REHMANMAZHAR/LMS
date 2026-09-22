@@ -643,7 +643,6 @@ export default function StudyDashboard({
     (task) => settings[`planner.done.${task.id}`] === todayKey,
   );
   const originalTasksCompletedToday = completedTodayTasks.filter((task) => task.originalDate === todayKey);
-  const catchUpTasksToday = planner.effective.get(todayKey) ?? [];
   const catchUpCompletedToday = completedTodayTasks.filter((task) => task.originalDate !== todayKey);
   const originalTasksRemainingToday = originallyAssignedToday.filter((task) => !settings[`planner.done.${task.id}`]);
   const todayRemainingTasks = todayTasks.filter((task) => !planner.completedTaskIds.has(task.id));
@@ -1174,9 +1173,10 @@ export default function StudyDashboard({
                 {selectedDate === todayKey && (
                   <div className="calendar-day-ledger" aria-label="Today task ledger">
                     <div><strong>{originallyAssignedToday.length}</strong><span>Original plan today</span><small>{originalTasksRemainingToday.length} still remaining</small></div>
-                    <div><strong>{catchUpTasksToday.length}</strong><span>Catch-up on today&apos;s working list</span><small>{catchUpCompletedToday.length} completed today</small></div>
-                    <div><strong>{completedTodayTasks.length}</strong><span>Total completed today</span><small>{originalTasksCompletedToday.length} original · {catchUpCompletedToday.length} catch-up</small></div>
-                    <p><b>Why the numbers differ:</b> today&apos;s original plan and carried-forward work are tracked separately. In this example, 12 completed today are 12 catch-up tasks; the 2 original tasks are still pending unless checked.</p>
+                    <div><strong>{originalTasksCompletedToday.length}</strong><span>Completed from today&apos;s plan</span><small>of {originallyAssignedToday.length} original</small></div>
+                    <div><strong>{catchUpCompletedToday.length}</strong><span>Catch-up completed today</span><small>Total completed − original completed</small></div>
+                    <div><strong>{completedTodayTasks.length}</strong><span>Total completed today</span><small>{originalTasksCompletedToday.length} original + {catchUpCompletedToday.length} catch-up</small></div>
+                    <p><b>How the count works:</b> catch-up completed today = total completed today − tasks completed from today&apos;s original plan. Earlier dates retain their original history.</p>
                   </div>
                 )}
                 {STUDY_STREAMS.map((stream) => {
