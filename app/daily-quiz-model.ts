@@ -20,6 +20,7 @@ export type DailyQuizSessionPayload = {
   mode?: "daily" | "weekly";
   missingLessons?: string[];
   sourceNote?: string;
+  verifiedPastPaperReferences?: Array<{ label: string; reference: string; paperUrl: string; schemeUrl: string; kind: "Past paper" | "Specimen" }>;
   questions: DailyQuizQuestion[];
 };
 
