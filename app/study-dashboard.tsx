@@ -642,7 +642,10 @@ export default function StudyDashboard({
   const completedTodayTasks = [...planner.tasksById.values()].filter(
     (task) => settings[`planner.done.${task.id}`] === todayKey,
   );
+  const originalTasksCompletedToday = completedTodayTasks.filter((task) => task.originalDate === todayKey);
+  const catchUpTasksToday = planner.effective.get(todayKey) ?? [];
   const catchUpCompletedToday = completedTodayTasks.filter((task) => task.originalDate !== todayKey);
+  const originalTasksRemainingToday = originallyAssignedToday.filter((task) => !settings[`planner.done.${task.id}`]);
   const todayRemainingTasks = todayTasks.filter((task) => !planner.completedTaskIds.has(task.id));
   const todayRemainingMinutes = todayRemainingTasks.reduce((sum, task) => sum + Math.ceil(task.minutes * (1 - Number(settings[`planner.taskPartial.${task.id}`] || 0) / 100)) + (task.quizMinutes ?? (task.kind === "syllabus" ? 20 : 0)), 0);
   const todayCompletedCount = todayTasks.length - todayRemainingTasks.length;
@@ -1159,20 +1162,21 @@ export default function StudyDashboard({
                     ? completedTodayTasks.length
                     : tasks.filter((task) => settings[`planner.done.${task.id}`] === day).length;
                   const catchUp = day === todayKey ? catchUpCompletedToday.length : 0;
+                  const originalRemaining = day === todayKey ? originalTasksRemainingToday.length : 0;
                   return <button key={day} className={`${selectedDate === day ? "selected" : ""} ${day === todayKey ? "today" : ""} ${missed ? "missed" : ""}`} title={day === todayKey
-                    ? `${fullDateLabel(day)}: ${originallyAssigned} originally assigned · ${completedThatDay} completed today · ${catchUp} catch-up from earlier dates`
+                    ? `${fullDateLabel(day)}: ${originallyAssigned} original plan · ${originalRemaining} original remaining · ${catchUp} catch-up completed today`
                     : `${fullDateLabel(day)}: ${originallyAssigned} originally assigned · ${completedThatDay} completed`}
-                    onClick={() => setSelectedDate(day)}><b>{Number(day.slice(-2))}</b>{tasks.length > 0 && <span>{day === todayKey ? `${completedThatDay} done` : `${done}/${tasks.length}`}</span>}{day === todayKey && originallyAssigned > 0 && <small className="calendar-day-planned">{originallyAssigned} planned</small>}</button>;
+                    onClick={() => setSelectedDate(day)}><b>{Number(day.slice(-2))}</b>{day === todayKey ? <><span>${catchUp} catch-up done</span>{originallyAssigned > 0 && <small className="calendar-day-planned">${originallyAssigned} planned · ${originalRemaining} left</small>}</> : tasks.length > 0 && <span>${done}/${tasks.length}</span>}</button>;
                 })}</div>
               </div>
               <div className="date-tasks panel">
-                <div className="section-heading"><div><span className="eyebrow">ASSIGNED TASKS</span><h2>{fullDateLabel(selectedDate)}</h2></div><strong>{selectedPlannerTasks.length} task{selectedPlannerTasks.length === 1 ? "" : "s"} · {selectedPlannerTasks.reduce((sum, task) => sum + plannedTaskMinutes(task), 0)} min</strong></div>
+                <div className="section-heading"><div><span className="eyebrow">{selectedDate === todayKey ? "TODAY'S WORKING LIST" : "ASSIGNED TASKS"}</span><h2>{fullDateLabel(selectedDate)}</h2></div><strong>{selectedPlannerTasks.length} current task{selectedPlannerTasks.length === 1 ? "" : "s"} · {selectedPlannerTasks.reduce((sum, task) => sum + plannedTaskMinutes(task), 0)} min</strong></div>
                 {selectedDate === todayKey && (
                   <div className="calendar-day-ledger" aria-label="Today task ledger">
-                    <div><strong>{originallyAssignedToday.length}</strong><span>Originally assigned today</span></div>
-                    <div><strong>{completedTodayTasks.length}</strong><span>Completed today</span></div>
-                    <div><strong>{catchUpCompletedToday.length}</strong><span>Catch-up from earlier dates</span></div>
-                    <p>Today&apos;s completion count includes tasks Talha finished today after carrying them forward from earlier dates. Earlier dates keep their original history.</p>
+                    <div><strong>{originallyAssignedToday.length}</strong><span>Original plan today</span><small>{originalTasksRemainingToday.length} still remaining</small></div>
+                    <div><strong>{catchUpTasksToday.length}</strong><span>Catch-up on today&apos;s working list</span><small>{catchUpCompletedToday.length} completed today</small></div>
+                    <div><strong>{completedTodayTasks.length}</strong><span>Total completed today</span><small>{originalTasksCompletedToday.length} original · {catchUpCompletedToday.length} catch-up</small></div>
+                    <p><b>Why the numbers differ:</b> today&apos;s original plan and carried-forward work are tracked separately. In this example, 12 completed today are 12 catch-up tasks; the 2 original tasks are still pending unless checked.</p>
                   </div>
                 )}
                 {STUDY_STREAMS.map((stream) => {
