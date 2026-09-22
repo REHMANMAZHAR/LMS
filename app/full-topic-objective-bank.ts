@@ -16,13 +16,17 @@ export type TopicObjectiveBank = {
 
 const optionIds = ["a", "b", "c", "d"];
 
-function choice(id: string, prompt: string, correctIndex: number, labels: string[], explanation: string): PrivateQuestion {
+function choice(id: string, prompt: string, correctIndex: number | string, labels: string[], explanation: string): PrivateQuestion {
+  const index = typeof correctIndex === "string" ? Number(correctIndex) : correctIndex;
+  if (!Number.isInteger(index) || index < 0 || index >= labels.length) {
+    throw new Error(`Invalid choice index for ${id}`);
+  }
   return {
     id,
     prompt,
     type: "choice",
-    answer: optionIds[correctIndex],
-    correctAnswer: labels[correctIndex],
+    answer: optionIds[index],
+    correctAnswer: labels[index],
     explanation,
     options: labels.map((label, index) => ({ id: optionIds[index], label })),
     estimatedMinutes: 2,
