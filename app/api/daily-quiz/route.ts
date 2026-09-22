@@ -116,6 +116,7 @@ export async function GET(request: Request) {
       lessonTitle: dailyQuiz.lessonTitle,
       durationSeconds,
       mode: resolved!.mode, missingLessons: resolved!.missingLessons, sourceNote: resolved!.sourceNote,
+      verifiedPastPaperReferences: resolved!.verifiedPastPaperReferences,
       expiresAt: expiresAt.toISOString(),
       questions: selectedQuestions.map((question, index) => publicDailyQuestion(question, index + 1)),
     }, { headers: { "cache-control": "no-store" } });
