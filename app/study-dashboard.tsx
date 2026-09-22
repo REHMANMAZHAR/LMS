@@ -40,6 +40,7 @@ import TargetPlanner from "./target-planner";
 import type { PlannedTask } from "./adaptive-plan";
 
 type View = "today" | "calendar" | "syllabus" | "dates" | "quizzes" | "tests" | "plan" | "parent" | "help";
+type CalendarTaskFilter = "all" | "original" | "catchup";
 
 type TabGuideContent = {
   purpose: string;
@@ -483,6 +484,7 @@ export default function StudyDashboard({
   const [repeatDateChoice, setRepeatDateChoice] = useState(() => moveDate(localDateKey(), 1));
   const [selectedDate, setSelectedDate] = useState(localDateKey());
   const [calendarMonth, setCalendarMonth] = useState(() => localDateKey().slice(0, 7));
+  const [calendarTaskFilter, setCalendarTaskFilter] = useState<CalendarTaskFilter>("all");
 
   const loadFamilyState = useCallback(async (showError = false) => {
     try {
@@ -671,11 +673,24 @@ export default function StudyDashboard({
   const selectedPlannerTasks = selectedDate < todayKey
     ? (planner.canonical.get(selectedDate) ?? [])
     : (planner.effective.get(selectedDate) ?? []);
+  const selectedOriginalTasks = planner.canonical.get(selectedDate) ?? [];
+  const selectedCatchUpTasks = selectedDate === todayKey
+    ? selectedPlannerTasks.filter((task) => task.originalDate !== selectedDate)
+    : [];
+  const filteredCalendarTasks = selectedDate !== todayKey || calendarTaskFilter === "all"
+    ? selectedPlannerTasks
+    : calendarTaskFilter === "original"
+      ? selectedOriginalTasks
+      : selectedCatchUpTasks;
   const effectiveDateByTaskId = useMemo(() => {
     const dates = new Map<string, string>();
     planner.effective.forEach((tasks, date) => tasks.forEach((task) => dates.set(task.id, date)));
     return dates;
   }, [planner.effective]);
+
+  function selectCalendarTaskFilter(filter: CalendarTaskFilter) {
+    setCalendarTaskFilter(filter);
+  }
 
   function calendarTaskStatus(task: PlannerTask) {
     const completedDate = settings[`planner.done.${task.id}`];
@@ -1171,20 +1186,44 @@ export default function StudyDashboard({
               <div className="date-tasks panel">
                 <div className="section-heading"><div><span className="eyebrow">{selectedDate === todayKey ? "TODAY'S WORKING LIST" : "ASSIGNED TASKS"}</span><h2>{fullDateLabel(selectedDate)}</h2></div><strong>{selectedPlannerTasks.length} current task{selectedPlannerTasks.length === 1 ? "" : "s"} · {selectedPlannerTasks.reduce((sum, task) => sum + plannedTaskMinutes(task), 0)} min</strong></div>
                 {selectedDate === todayKey && (
-                  <div className="calendar-day-ledger" aria-label="Today task ledger">
-                    <div><strong>{originallyAssignedToday.length}</strong><span>Original plan today</span><small>{originalTasksRemainingToday.length} still remaining</small></div>
-                    <div><strong>{originalTasksCompletedToday.length}</strong><span>Completed from today&apos;s plan</span><small>of {originallyAssignedToday.length} original</small></div>
-                    <div><strong>{catchUpCompletedToday.length}</strong><span>Catch-up completed today</span><small>Total completed − original completed</small></div>
-                    <div><strong>{completedTodayTasks.length}</strong><span>Total completed today</span><small>{originalTasksCompletedToday.length} original + {catchUpCompletedToday.length} catch-up</small></div>
-                    <p><b>How the count works:</b> catch-up completed today = total completed today − tasks completed from today&apos;s original plan. Earlier dates retain their original history.</p>
-                  </div>
+                  <>
+                    <div className="calendar-day-ledger" aria-label="Today task ledger">
+                      <button type="button" className="calendar-ledger-card" onClick={() => selectCalendarTaskFilter("original")} aria-pressed={calendarTaskFilter === "original"}>
+                        <strong>{originallyAssignedToday.length}</strong><span>Original plan today</span><small>{originalTasksRemainingToday.length} still remaining · click to view</small>
+                      </button>
+                      <button type="button" className="calendar-ledger-card" onClick={() => selectCalendarTaskFilter("original")} aria-pressed={calendarTaskFilter === "original"}>
+                        <strong>{originalTasksCompletedToday.length}</strong><span>Completed from today&apos;s plan</span><small>of {originallyAssignedToday.length} original · click to view</small>
+                      </button>
+                      <button type="button" className="calendar-ledger-card" onClick={() => selectCalendarTaskFilter("catchup")} aria-pressed={calendarTaskFilter === "catchup"}>
+                        <strong>{catchUpCompletedToday.length}</strong><span>Catch-up completed today</span><small>Click to view catch-up work</small>
+                      </button>
+                      <button type="button" className="calendar-ledger-card" onClick={() => selectCalendarTaskFilter("all")} aria-pressed={calendarTaskFilter === "all"}>
+                        <strong>{completedTodayTasks.length}</strong><span>Total completed today</span><small>{originalTasksCompletedToday.length} original + {catchUpCompletedToday.length} catch-up</small>
+                      </button>
+                      <p><b>How the count works:</b> catch-up completed today = total completed today − tasks completed from today&apos;s original plan. Click a card to filter the task list below. Earlier dates retain their original history.</p>
+                    </div>
+                    <div className="calendar-task-filters" role="group" aria-label="Filter today&apos;s calendar tasks">
+                      <span>Show:</span>
+                      <button type="button" className={calendarTaskFilter === "all" ? "active" : ""} onClick={() => selectCalendarTaskFilter("all")}>All current ({selectedPlannerTasks.length})</button>
+                      <button type="button" className={calendarTaskFilter === "original" ? "active" : ""} onClick={() => selectCalendarTaskFilter("original")}>Original plan ({selectedOriginalTasks.length})</button>
+                      <button type="button" className={calendarTaskFilter === "catchup" ? "active" : ""} onClick={() => selectCalendarTaskFilter("catchup")}>Catch-up ({selectedCatchUpTasks.length})</button>
+                    </div>
+                  </>
                 )}
                 {STUDY_STREAMS.map((stream) => {
-                  const subjectTasks = selectedPlannerTasks.filter((task) => task.stream === stream.name);
+                  const subjectTasks = filteredCalendarTasks.filter((task) => task.stream === stream.name);
                   if (!subjectTasks.length) return null;
                   return <div className="subject-task-group" key={stream.name}><h3><i style={{ background: stream.color }} />{subjectTasks.every(task => task.kind === "revision") ? "Weekly assessment · all studied subjects" : stream.name}<span>{subjectTasks.reduce((sum, task) => sum + plannedTaskMinutes(task), 0)} min</span></h3>{subjectTasks.map((task) => { const checked = planner.completedTaskIds.has(task.id); const checkOutcome = dailyCheckOutcomeByTask.get(task.id); return <label className={`planner-task ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><strong>{task.lesson.title}</strong><small>Syllabus: {task.topic.code} · {task.topic.title}</small><small>{task.kind === "revision" ? "Weekend assessment" : task.kind === "past-paper" ? (task.topic.code === "PAST PAPER" ? "Past-paper marathon" : "Topical exam practice") : `${task.topic.code} · daily lesson`} · {task.minutes} min{task.kind === "syllabus" && task.quizMinutes !== 0 ? " + 20 min check allowance" : ""}{task.carriedForward ? ` · moved from ${fullDateLabel(task.originalDate)}` : ""}</small><small className="daily-check-status"><b>{calendarTaskStatus(task)}</b></small><small><b>Goal:</b> {task.lesson.objective}</small><small><b>Method:</b> {task.lesson.studyMethod}</small><small><b>Practice:</b> {task.lesson.practice}</small><small><b>Recall:</b> {task.lesson.recall}</small>{checkOutcome && <small className="daily-check-status">Latest check: <b>{checkOutcome}</b></small>}</span><span className="planner-task-actions">{!checked && task.kind === "syllabus" && <select aria-label={`Progress on ${task.lesson.title}`} value={settings[`planner.taskPartial.${task.id}`] || "0"} disabled={saving} onChange={(event) => void saveSetting(`planner.taskPartial.${task.id}`, event.target.value)}><option value="0">Not started</option><option value="25">25% done</option><option value="50">50% done</option><option value="75">75% done</option></select>}{checked && task.kind === "syllabus" && <button type="button" disabled={saving} onClick={() => void addNextToday(task.stream)}>Add next lesson today</button>}{task.kind === "syllabus" && <button type="button" className="daily-check-button" onClick={() => setDailyQuizTaskId(task.id)}>{checkOutcome ? "Retake check" : "Daily check"}</button>}<button type="button" onClick={() => window.open(topicPracticeUrl(task.topic), "_blank", "noopener,noreferrer")}>Optional practice search ↗</button><button type="button" onClick={() => { revealTopic(task.topic); setView(task.kind !== "syllabus" ? "tests" : "syllabus"); }}>{task.kind === "past-paper" ? "Record" : "Open"}</button></span></label>; })}</div>;
                 })}
-                {!selectedPlannerTasks.length && <EmptyMessage>{isStudyDate(selectedDate, studyDays) ? "No task is assigned on this date." : "Rest and consolidation day. Missed work will move to the next available study day."}</EmptyMessage>}
+                {!filteredCalendarTasks.length && <EmptyMessage>{
+                  selectedDate === todayKey && calendarTaskFilter === "original"
+                    ? "No task belongs to today's original plan."
+                    : selectedDate === todayKey && calendarTaskFilter === "catchup"
+                      ? "No catch-up work is currently on today's working list."
+                      : isStudyDate(selectedDate, studyDays)
+                        ? "No task is assigned on this date."
+                        : "Rest and consolidation day. Missed work will move to the next available study day."
+                }</EmptyMessage>}
               </div>
             </div>
             <div className="notification-settings panel"><div><span className="eyebrow">REMINDERS</span><h2>Study notification</h2><p>The browser will ask permission. On devices that restrict background web notifications, the LMS will still show overdue work when opened.</p></div><label>Reminder time<input type="time" value={settings.reminderTime} onChange={(event) => saveSetting("reminderTime", event.target.value)} /></label><button onClick={() => void enableReminders()}>{remindersEnabled ? "Send test notification" : "Enable notifications"}</button></div>
