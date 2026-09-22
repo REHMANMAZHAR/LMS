@@ -388,8 +388,177 @@ const SPECIFIC: Record<string, PrivateQuestion[]> = {
   ],
 };
 
+
+const ADDITIONAL_SPECIFIC: Record<string, PrivateQuestion[]> = {
+  "chem-2-4": [
+    choice("chem24-1","What happens when sodium chloride forms from sodium and chlorine?",0,["Sodium transfers an electron to chlorine","Both atoms lose all electrons","Chlorine transfers a proton to sodium","The nuclei combine"],"Sodium forms Na+ by losing one electron and chlorine forms Cl− by gaining it."),
+    choice("chem24-2","Why does solid sodium chloride not conduct electricity?",2,["It contains no charged particles","Its ions are covalent","Its ions are fixed in a lattice and cannot move","Its electrons are delocalised"],"The ions are charged but cannot move through the solid lattice."),
+    choice("chem24-3","Why does molten sodium chloride conduct electricity?",1,["Its atoms become neutral","Its ions are free to move","It contains free neutrons","Its covalent bonds become metallic"],"Molten ionic compounds contain mobile ions that carry charge.")
+  ],
+  "chem-5-1b": [
+    choice("chem51b-1","On an energy level diagram for an exothermic reaction, the products are…",2,["higher in energy than reactants","at exactly the same energy","lower in energy than reactants","always at zero energy"],"Energy is released overall, so products have lower chemical energy."),
+    choice("chem51b-2","Breaking chemical bonds is generally…",0,["endothermic","exothermic","energy-neutral","impossible"],"Energy must be supplied to break bonds."),
+    choice("chem51b-3","A reaction is exothermic overall when…",3,["more energy is absorbed breaking bonds than released","no bonds change","all products are gases","more energy is released forming bonds than absorbed breaking bonds"],"The net energy change is negative when bond formation releases more energy than bond breaking absorbs.")
+  ],
+  "chem-6-2b": [
+    choice("chem62b-1","Why is a tangent drawn to a volume-time graph when finding an initial rate?",1,["to find the final volume","to find the gradient at the start","to find the temperature","to prove the reaction is reversible"],"The initial gradient gives the initial rate."),
+    choice("chem62b-2","Which change improves the fairness of a rate experiment?",3,["change several variables at once","use different apparatus each trial","ignore repeat results","change one independent variable while controlling others"],"Only the intended independent variable should change."),
+    choice("chem62b-3","A catalyst changes a rate graph by making the reaction…",0,["reach the same endpoint faster","produce a different equilibrium amount in every reaction","use more reactants","stop before products form"],"A catalyst provides a lower activation-energy pathway and does not change the final equilibrium position.")
+  ],
+  "chem-6-4": [
+    choice("chem64-1","Oxidation is best defined as…",1,["gain of electrons","loss of electrons","gain of neutrons","loss of protons"],"Oxidation is loss of electrons."),
+    choice("chem64-2","In a redox reaction, the reducing agent…",3,["is always oxygen","gains neutrons","cannot react","causes another substance to be reduced and is itself oxidised"],"The reducing agent donates electrons and is oxidised."),
+    choice("chem64-3","An increase in oxidation number represents…",0,["oxidation","reduction","neutralisation","precipitation"],"Oxidation number increases when a species is oxidised.")
+  ],
+  "chem-11-1": [
+    choice("chem111-1","A homologous series has members with the same…",2,["relative mass only","number of carbon atoms","functional group and general chemical properties","physical state at all temperatures"],"Members share a functional group and similar chemical reactions."),
+    choice("chem111-2","Which feature distinguishes a functional group?",0,["It is the part of a molecule responsible for characteristic reactions","It is always a carbon chain of four atoms","It contains no atoms","It determines only colour"],"Functional groups control characteristic organic reactions."),
+    choice("chem111-3","Successive members of many homologous series differ by…",1,["H","CH2","OH","CO2"],"Adjacent members differ by CH2.")
+  ],
+  "chem-11-6": [
+    choice("chem116-1","Which functional group is present in an alcohol?",0,["−OH","C=C","−COOH","−CHO only"],"Alcohols contain a hydroxyl group, −OH."),
+    choice("chem116-2","What product forms when ethanol is oxidised completely?",2,["ethene","methane","ethanoic acid","propane"],"Ethanol can be oxidised to ethanoic acid under suitable conditions."),
+    choice("chem116-3","Which condition can produce ethene from ethanol?",3,["cooling with water","adding sodium chloride","mixing with oxygen only","heating with a suitable catalyst or dehydrating agent"],"Ethanol can be dehydrated to ethene under suitable conditions.")
+  ],
+  "chem-11-7": [
+    choice("chem117-1","Which functional group identifies a carboxylic acid?",1,["−OH only","−COOH","C=C","−NH2"],"Carboxylic acids contain the −COOH group."),
+    choice("chem117-2","Ethanoic acid reacts with ethanol to form…",2,["ethene and water","methane and oxygen","ethyl ethanoate and water","sodium ethanoate only"],"An alcohol and carboxylic acid can undergo esterification."),
+    choice("chem117-3","Esters are often recognised by…",0,["distinctive fruity smells","strong metallic bonding","ionic lattices","very high electrical conductivity"],"Many esters have characteristic fruity or sweet smells.")
+  ],
+  "chem-11-8": [
+    choice("chem118-1","Addition polymerisation requires monomers containing…",3,["only single bonds","ionic lattices","metal ions","a carbon-carbon double bond"],"Alkenes can open their C=C bonds and join into addition polymers."),
+    choice("chem118-2","Condensation polymerisation differs because it…",1,["uses only alkanes","eliminates a small molecule such as water","never forms long chains","always requires metal ions"],"Condensation polymerisation forms a polymer while eliminating a small molecule."),
+    choice("chem118-3","Poly(ethene) is formed from…",2,["ethanol","ethane","ethene","ethanoic acid"],"Ethene monomers undergo addition polymerisation.")
+  ],
+  "chem-12-1": [
+    choice("chem121-1","A good experimental plan should identify…",0,["independent, dependent and controlled variables","only the apparatus","only the final answer","only the temperature"],"A sound plan states what is changed, measured and controlled."),
+    choice("chem121-2","Repeating an experiment mainly helps to…",2,["change the independent variable","remove all systematic error","identify anomalous results and improve reliability","guarantee the hypothesis is true"],"Repeats help identify anomalies and assess consistency."),
+    choice("chem121-3","If one result is very different from the others, it should first be…",1,["silently deleted","checked as a possible anomaly and investigated","used as the only result","rounded until it agrees"],"An anomalous result should be investigated rather than hidden.")
+  ],
+  "chem-12-5": [
+    choice("chem125-1","Which test identifies carbon dioxide?",0,["bubble the gas through limewater; it turns milky","use a glowing splint; it relights","use blue litmus; it turns green","use cobalt chloride paper; it turns blue"],"Carbon dioxide turns limewater milky."),
+    choice("chem125-2","Which test gives a squeaky pop with hydrogen?",3,["damp red litmus","limewater","blue cobalt chloride paper","a lighted splint"],"Hydrogen burns with a characteristic squeaky pop."),
+    choice("chem125-3","What is the flame-test colour for sodium ions?",2,["lilac","brick red","yellow","green"],"Sodium ions produce a bright yellow flame.")
+  ],
+  "math-e1-11": [
+    choice("mathe111-1","If 3:5 is simplified by dividing both parts by their common factor, the ratio remains…",0,["equivalent","larger","smaller","undefined"],"Multiplying or dividing both parts by the same non-zero factor preserves a ratio."),
+    choice("mathe111-2","If 4 notebooks cost $12, the unit cost is…",2,["$2","$2.50","$3","$4"],"12 ÷ 4 = 3."),
+    choice("mathe111-3","If y is directly proportional to x, then y/x is…",1,["variable","constant","zero always","negative always"],"Direct proportion means y = kx, so y/x = k.")
+  ],
+  "math-e2-3": [
+    choice("mathe23-1","To simplify (x^2−9)/(x−3), factorising gives…",2,["x−3","x+9","x+3 for x≠3","x^2−6"],"x^2−9=(x−3)(x+3), so the common factor cancels for x≠3."),
+    choice("mathe23-2","When cancelling a factor in an algebraic fraction, you must consider…",0,["values that make the original denominator zero","only positive values","the numerator's colour","the units"],"Restrictions come from values that make the original denominator zero."),
+    choice("mathe23-3","Which is a valid first step for (x+2)/x + 1/x?",1,["multiply only the numerator by x","combine over the common denominator x","cancel x with x+2","subtract the fractions"],"Both fractions can be combined over denominator x.")
+  ],
+  "math-e2-13": [
+    choice("mathe213-1","If f(x)=2x+3, f(4)=…",0,["11","8","7","5"],"Substitute x=4: 2(4)+3=11."),
+    choice("mathe213-2","The inverse of a one-to-one function reverses…",3,["only multiplication","only addition","the graph's axes","the mapping from input to output"],"An inverse function reverses the original input-output mapping."),
+    choice("mathe213-3","For a function, each input should have…",2,["two outputs","no output","exactly one output","at least three outputs"],"A function assigns exactly one output to each input.")
+  ],
+  "math-e4-4": [
+    choice("mathe44-1","Similar shapes have corresponding angles that are…",1,["always supplementary","equal","always right angles","random"],"Corresponding angles in similar figures are equal."),
+    choice("mathe44-2","If corresponding lengths have scale factor 3, areas have scale factor…",0,["9","3","6","27"],"Area scale factor is the square of the linear scale factor."),
+    choice("mathe44-3","Congruent shapes have the same…",3,["area only","perimeter only","angles only","shape and size"],"Congruent figures are identical in shape and size.")
+  ],
+  "math-e4-8": [
+    choice("mathe48-1","The angle between a tangent and the radius at the point of contact is…",0,["90°","45°","180°","60°"],"A tangent is perpendicular to the radius at the point of contact."),
+    choice("mathe48-2","The angle between a tangent and a chord equals the angle in the…",2,["same tangent","alternate segment","centre only","diameter only"],"The alternate segment theorem relates the tangent-chord angle to the angle in the opposite arc."),
+    choice("mathe48-3","Tangents drawn from the same external point to a circle have…",1,["different lengths always","equal lengths","zero length","the same radius"],"The two tangent lengths from a common external point are equal.")
+  ],
+  "math-e5-3": [
+    choice("mathe53-1","The area of a sector with angle θ in degrees and radius r is…",2,["πr²θ","2πrθ","θ/360 × πr²","θ/180 × r"],"A sector is the same fraction θ/360 of a full circle."),
+    choice("mathe53-2","The arc length of a sector is…",0,["θ/360 × 2πr","θ/360 × πr²","2πr²","πr/θ"],"Arc length is the same fraction of the circumference as the sector angle is of 360°."),
+    choice("mathe53-3","For a semicircle, the sector angle is…",3,["90°","120°","270°","180°"],"A semicircle is half a full turn.")
+  ],
+  "math-e5-4": [
+    choice("mathe54-1","The volume of a cylinder is…",1,["2πrh","πr²h","πdh²","πr+h"],"Volume equals base area πr² multiplied by height h."),
+    choice("mathe54-2","Surface area differs from volume because surface area is measured in…",0,["square units","cubic units","degrees","litres only"],"Area uses square units while volume uses cubic units."),
+    choice("mathe54-3","When using a scale factor k for similar solids, volume scales by…",2,["k","2k","k³","k²"],"Three-dimensional volume scales with the cube of the linear scale factor.")
+  ],
+  "math-e6-2": [
+    choice("mathe62-1","In a right triangle, sin θ equals…",3,["adjacent/hypotenuse","opposite/adjacent","hypotenuse/opposite","opposite/hypotenuse"],"SOH gives sin θ = opposite/hypotenuse."),
+    choice("mathe62-2","In a right triangle, cos θ equals…",0,["adjacent/hypotenuse","opposite/hypotenuse","opposite/adjacent","hypotenuse/adjacent"],"CAH gives cos θ = adjacent/hypotenuse."),
+    choice("mathe62-3","If tan θ = 3/4 for an acute angle, θ is approximately…",1,["30.0°","36.9°","53.1°","75.0°"],"θ = tan⁻¹(3/4) ≈ 36.9°.")
+  ],
+  "math-e7-1": [
+    choice("mathe71-1","A rotation is defined by its centre and…",2,["scale factor only","equation only","angle and direction","gradient only"],"A rotation needs a centre, angle and direction."),
+    choice("mathe71-2","A reflection is defined by a…",0,["mirror line","centre and angle","scale factor","vector magnitude only"],"The mirror line determines a reflection."),
+    choice("mathe71-3","An enlargement is described by a centre and…",1,["gradient","scale factor","probability","radius"],"An enlargement needs a centre and scale factor.")
+  ],
+  "math-e9-6": [
+    choice("mathe96-1","On a cumulative frequency graph, the median is found at cumulative frequency…",3,["0","the maximum x-value","the range","half the total frequency"],"The median corresponds to half the total cumulative frequency."),
+    choice("mathe96-2","The interquartile range is…",1,["Q1+Q3","Q3−Q1","median−Q1","maximum−minimum"],"IQR measures the spread of the middle 50% using Q3−Q1."),
+    choice("mathe96-3","A cumulative frequency curve can be used to estimate…",0,["percentiles and quartiles","exact individual raw values","chemical formulae","gradient only"],"Percentiles and quartiles can be read approximately from the curve.")
+  ],
+  "math-e9-7": [
+    choice("mathe97-1","A histogram is appropriate for…",2,["categorical labels only","individual names","continuous grouped data","single exact values only"],"Histograms represent continuous grouped data."),
+    choice("mathe97-2","In a histogram, frequency density is…",0,["frequency ÷ class width","frequency × class width","class width ÷ frequency","frequency + class width"],"Frequency density equals frequency divided by class width."),
+    choice("mathe97-3","The area of a histogram bar represents…",1,["class width only","frequency","frequency density only","the mean"],"Bar area is proportional to frequency.")
+  ],
+  "pak-kq1": [
+    choice("pakkq1-1","Why were Shah Waliullah's ideas important in the study of Muslim revival in South Asia?",2,["He created Pakistan in 1947","He introduced modern industry","He sought to strengthen Muslim religious understanding and unity","He abolished Mughal rule"],"His reformist thought sought revival and greater understanding of Islam."),
+    choice("pakkq1-2","A central theme of Muslim revival movements was…",0,["renewing religious practice and identity","ending all education","rejecting all scholarship","removing religious law"],"Revival movements commonly stressed renewal of religious understanding and practice."),
+    choice("pakkq1-3","When answering a question on religious thinkers, a strong response should…",3,["list names only","use unrelated political events","avoid explaining ideas","identify the thinker, explain the idea and its significance"],"Cambridge-style history answers need accurate knowledge plus explanation of significance.")
+  ],
+  "pak-kq6": [
+    choice("pakkq6-1","Why was the Simla Deputation of 1906 significant?",1,["It ended British rule","It established a political claim for separate Muslim representation","It created Bangladesh","It passed the Lahore Resolution"],"The deputation pressed for Muslim political safeguards and separate representation."),
+    choice("pakkq6-2","The All-India Muslim League was founded in…",0,["1906","1919","1930","1947"],"The Muslim League was founded at Dacca in 1906."),
+    choice("pakkq6-3","A key concern of early Muslim political organisation was…",2,["ending all elections","removing provincial identities","protecting Muslim political interests","abolishing representative government"],"Political safeguards for Muslims were a central concern.")
+  ],
+  "pak-kq10": [
+    choice("pakkq10-1","The Allahabad Address of 1930 is associated with…",3,["Sir Syed Ahmad Khan","Liaquat Ali Khan","Rahmat Ali","Allama Iqbal"],"Iqbal's address discussed a Muslim-majority political unit in north-west India."),
+    choice("pakkq10-2","Rahmat Ali is associated with the name…",1,["Pakistan in the Lahore Resolution","Pakistan in the pamphlet Now or Never","the Nehru Report","the Simla Deputation"],"Rahmat Ali used the name Pakistan in his 1933 pamphlet."),
+    choice("pakkq10-3","Jinnah's political role in the Pakistan Movement included…",0,["negotiating constitutional safeguards and Muslim political representation","leading the Khilafat Movement","writing the Allahabad Address","serving as Viceroy"],"Jinnah pursued constitutional and political safeguards for Muslims.")
+  ],
+  "pak-kq12": [
+    choice("pakkq12-1","Why was the Objectives Resolution important?",2,["It created East Pakistan","It ended martial law permanently","It set principles for Pakistan's constitutional development","It introduced the 1973 constitution immediately"],"It laid down principles that influenced later constitutional development."),
+    choice("pakkq12-2","A major political challenge after Jinnah was…",0,["building stable constitutional and representative institutions","ending all provincial government","abolishing the civil service","removing elections from politics"],"Pakistan faced continuing constitutional and political instability."),
+    choice("pakkq12-3","When evaluating political stability, an answer should consider…",3,["only one leader","only economic statistics","only foreign policy","institutions, leadership, constitutional issues and political events"],"Judgement requires comparison of relevant political factors.")
+  ],
+  "pak-p2-1": [
+    choice("pakp21-1","Which river is central to Pakistan's major river system?",1,["Ravi only","Indus","Chenab only","Jhelum only"],"The Indus is the main river of Pakistan's drainage system."),
+    choice("pakp21-2","Why do relief and climate affect settlement patterns?",3,["They have no effect","They determine only language","They affect only exports","They influence water supply, farming, transport and living conditions"],"Physical geography affects where people can live and economic activity can develop."),
+    choice("pakp21-3","Which area is associated with high mountain relief?",0,["Karakoram and Himalaya region","Indus delta only","Thar Desert only","Lower Indus plain only"],"Northern Pakistan includes major high mountain ranges.")
+  ],
+  "pak-p2-3": [
+    choice("pakp23-1","Which source provides a large share of Pakistan's electricity generation?",2,["tidal power only","geothermal only","thermal and hydel sources","human muscle"],"Pakistan uses both thermal generation and hydel power extensively."),
+    choice("pakp23-2","Why is energy shortage a development issue?",0,["Unreliable supply can disrupt industry, services and households","It affects only tourism","It has no effect on factories","It changes mountain height"],"Energy reliability affects economic activity and living standards."),
+    choice("pakp23-3","One way to improve energy sustainability is to…",1,["increase waste only","diversify renewable and efficient energy sources","stop maintaining power stations","use more fuel per unit of electricity"],"Diversification and efficiency can reduce dependence on less sustainable sources.")
+  ],
+  "pak-p2-4": [
+    choice("pakp24-1","Which factor is essential for irrigated agriculture in Pakistan?",3,["volcanic ash","permafrost","tidal waves","reliable water supply"],"Irrigation depends on reliable water from rivers, canals, reservoirs or groundwater."),
+    choice("pakp24-2","Why can salinity reduce agricultural productivity?",1,["It increases soil fertility indefinitely","Salt accumulation can reduce plant water uptake","It removes all soil minerals","It guarantees higher yields"],"Excess salts make it harder for crops to take up water."),
+    choice("pakp24-3","A sustainable agricultural strategy should aim to…",0,["use water and soil resources efficiently while maintaining productivity","maximise waste","ignore drainage","increase erosion"],"Sustainability balances production with long-term resource protection.")
+  ],
+  "pak-p2-5": [
+    choice("pakp25-1","Why are industries often located near transport routes?",2,["transport is irrelevant","factories cannot use roads","raw materials and finished goods need efficient movement","workers never travel"],"Transport reduces the time and cost of moving inputs and products."),
+    choice("pakp25-2","Which factor can encourage industrial development?",0,["reliable power, labour, capital and markets","lack of infrastructure","unreliable electricity","no access to raw materials"],"Industry depends on a combination of resources, infrastructure and markets."),
+    choice("pakp25-3","A major environmental issue from industry can be…",1,["increased biodiversity automatically","air and water pollution","lower waste production always","elimination of traffic"],"Industrial processes can release pollutants unless controlled.")
+  ],
+  "isl-p1-2c": [
+    choice("islp12c-1","Why is the Qur'an important as a source of law and guidance?",0,["It provides principles and commands that guide Muslim belief and conduct","It is used only for historical dates","It replaces all personal responsibility","It contains no guidance for conduct"],"Muslims use Qur'anic teachings as a primary source of belief, worship and moral guidance."),
+    choice("islp12c-2","When applying a Qur'anic teaching today, a strong answer should…",2,["repeat the passage only","give an unrelated example","identify the teaching and explain a concrete application","avoid explaining its significance"],"Application requires linking the teaching to a specific action or situation."),
+    choice("islp12c-3","The Qur'an is regarded by Muslims as…",1,["a later historical summary","the revealed word of God","a collection written by companions","a biography of the Prophet only"],"Muslims believe the Qur'an is the revealed word of Allah.")
+  ],
+  "isl-p1-4a": [
+    choice("islp14a-1","Why are the Prophet's family members studied in Islamiyat?",3,["only to memorise names","because family history replaces Qur'an study","because they were all rulers","their lives provide examples of faith, character and family relationships"],"The family is studied for knowledge of their lives and examples of conduct."),
+    choice("islp14a-2","Khadija was important in the Prophet's early life because she…",0,["supported him at the beginning of his mission","was his daughter","was a caliph","led the conquest of Makka"],"Khadija supported the Prophet emotionally and materially and was the first to believe in him."),
+    choice("islp14a-3","Fatima was the daughter of…",2,["Abu Bakr","Umar","the Prophet Muhammad","Uthman"],"Fatima was one of the Prophet's daughters.")
+  ],
+  "isl-p2-3d": [
+    choice("islp23d-1","A major challenge during Ali's caliphate was…",1,["the first revelation","civil conflict within the Muslim community","the compilation of the Qur'an under Abu Bakr","the conquest of Makka"],"Ali's caliphate was marked by serious internal conflicts."),
+    choice("islp23d-2","The Battle of the Camel involved Ali and opponents including…",3,["the Roman emperor","the Prophet's companions only as a united side","the Abbasids","Aisha, Talha and Zubayr"],"The Battle of the Camel was an early major conflict of Ali's caliphate."),
+    choice("islp23d-3","When assessing Ali's leadership, an answer should consider…",0,["the civil conflicts, his decisions and the difficulties of maintaining unity","only military victories","only his family background","only later dynasties"],"A balanced answer connects leadership decisions with the circumstances of civil conflict.")
+  ],
+  "isl-p2-4d": [
+    choice("islp24d-1","Hajj is obligatory for a Muslim who…",2,["is under five years old","has never prayed","is physically and financially able to perform it","has no intention to worship"],"Hajj is obligatory once for those who are able to undertake it."),
+    choice("islp24d-2","Jihad in Islamic teaching can refer to…",0,["striving in the cause of God, including moral struggle and other legitimate forms","only warfare","only pilgrimage","only charity"],"Jihad has a broad meaning of striving; its interpretation depends on context."),
+    choice("islp24d-3","A strong Islamiyat answer on Hajj or Jihad should…",1,["give a definition only","explain the teaching and its practical significance","avoid Qur'an and Hadith evidence","list unrelated historical dates"],"Higher-level responses connect accurate teaching with significance and application.")
+  ],
+};
+
 function generatedFor(topic: Topic): PrivateQuestion[] {
-  const specific = SPECIFIC[topic.id] ?? [];
+  const specific = [...(SPECIFIC[topic.id] ?? []), ...(ADDITIONAL_SPECIFIC[topic.id] ?? [])];
   const common = commonQuestions(topic);
   // Content-depth sprint: give every syllabus topic a larger retrieval pool.
   // Topic-specific authored questions remain the preferred first layer; the generated
@@ -451,7 +620,7 @@ export function topicObjectiveQuestions(topicId: string): DailyQuizQuestion[] {
   }));
 }
 
-export const FULL_TOPIC_OBJECTIVE_BANK_VERSION = "2026-09-22-v4-substantive-expansion";
+export const FULL_TOPIC_OBJECTIVE_BANK_VERSION = "2026-09-22-v5-substantive-expansion";
 export const FULL_TOPIC_OBJECTIVE_BANK_QUESTION_COUNT = FULL_TOPIC_OBJECTIVE_BANKS.reduce((sum, bank) => sum + bank.questions.length, 0);
 
 export const FULL_TOPIC_OBJECTIVE_BANK_TOPIC_COUNT = FULL_TOPIC_OBJECTIVE_BANKS.length;
