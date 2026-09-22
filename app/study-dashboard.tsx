@@ -40,7 +40,7 @@ import TargetPlanner from "./target-planner";
 import type { PlannedTask } from "./adaptive-plan";
 
 type View = "today" | "calendar" | "syllabus" | "dates" | "quizzes" | "tests" | "plan" | "parent" | "help";
-type CalendarTaskFilter = "all" | "original" | "catchup";
+type CalendarTaskFilter = "all" | "original" | "rescheduled" | "catchup";
 
 type TabGuideContent = {
   purpose: string;
@@ -674,20 +674,27 @@ export default function StudyDashboard({
     ? (planner.canonical.get(selectedDate) ?? [])
     : (planner.effective.get(selectedDate) ?? []);
   const selectedOriginalTasks = planner.canonical.get(selectedDate) ?? [];
-  const selectedCatchUpTasks = selectedDate === todayKey
-    ? selectedPlannerTasks.filter((task) => task.originalDate !== selectedDate)
-    : [];
-  const filteredCalendarTasks = selectedDate !== todayKey || calendarTaskFilter === "all"
-    ? selectedPlannerTasks
-    : calendarTaskFilter === "original"
-      ? selectedOriginalTasks
-      : selectedCatchUpTasks;
   const effectiveDateByTaskId = useMemo(() => {
     const dates = new Map<string, string>();
     planner.effective.forEach((tasks, date) => tasks.forEach((task) => dates.set(task.id, date)));
     return dates;
   }, [planner.effective]);
-
+  const selectedRescheduledTasks = selectedDate === todayKey
+    ? selectedOriginalTasks.filter((task) => {
+        const movedTo = effectiveDateByTaskId.get(task.id);
+        return !settings[`planner.done.${task.id}`] && Boolean(movedTo && movedTo !== selectedDate);
+      })
+    : [];
+  const selectedCatchUpTasks = selectedDate === todayKey
+    ? selectedPlannerTasks.filter((task) => task.originalDate < selectedDate)
+    : [];
+  const filteredCalendarTasks = selectedDate !== todayKey || calendarTaskFilter === "all"
+    ? selectedPlannerTasks
+    : calendarTaskFilter === "original"
+      ? selectedOriginalTasks
+      : calendarTaskFilter === "rescheduled"
+        ? selectedRescheduledTasks
+        : selectedCatchUpTasks;
   function selectCalendarTaskFilter(filter: CalendarTaskFilter) {
     setCalendarTaskFilter(filter);
   }
@@ -1180,7 +1187,7 @@ export default function StudyDashboard({
                   return <button key={day} className={`${selectedDate === day ? "selected" : ""} ${day === todayKey ? "today" : ""} ${missed ? "missed" : ""}`} title={day === todayKey
                     ? `${fullDateLabel(day)}: ${originallyAssigned} original plan · ${originalRemaining} original remaining · ${catchUp} catch-up completed today`
                     : `${fullDateLabel(day)}: ${originallyAssigned} originally assigned · ${completedThatDay} completed`}
-                    onClick={() => setSelectedDate(day)}><b>{Number(day.slice(-2))}</b>{day === todayKey ? <><span>${catchUp} catch-up done</span>{originallyAssigned > 0 && <small className="calendar-day-planned">${originallyAssigned} planned · ${originalRemaining} left</small>}</> : tasks.length > 0 && <span>${done}/${tasks.length}</span>}</button>;
+                    onClick={() => setSelectedDate(day)}><b>{Number(day.slice(-2))}</b>{day === todayKey ? <><span>{catchUp} catch-up done</span>{originallyAssigned > 0 && <small className="calendar-day-planned">{originallyAssigned} planned · {originalRemaining} left · {selectedRescheduledTasks.length} moved</small>}</> : tasks.length > 0 && <span>${done}/${tasks.length}</span>}</button>;
                 })}</div>
               </div>
               <div className="date-tasks panel">
@@ -1194,6 +1201,9 @@ export default function StudyDashboard({
                       <button type="button" className="calendar-ledger-card" onClick={() => selectCalendarTaskFilter("original")} aria-pressed={calendarTaskFilter === "original"}>
                         <strong>{originalTasksCompletedToday.length}</strong><span>Completed from today&apos;s plan</span><small>of {originallyAssignedToday.length} original · click to view</small>
                       </button>
+                      <button type="button" className="calendar-ledger-card" onClick={() => selectCalendarTaskFilter("rescheduled")} aria-pressed={calendarTaskFilter === "rescheduled"}>
+                        <strong>{selectedRescheduledTasks.length}</strong><span>Rescheduled from today</span><small>Click to view moved tasks</small>
+                      </button>
                       <button type="button" className="calendar-ledger-card" onClick={() => selectCalendarTaskFilter("catchup")} aria-pressed={calendarTaskFilter === "catchup"}>
                         <strong>{catchUpCompletedToday.length}</strong><span>Catch-up completed today</span><small>Click to view catch-up work</small>
                       </button>
@@ -1206,6 +1216,7 @@ export default function StudyDashboard({
                       <span>Show:</span>
                       <button type="button" className={calendarTaskFilter === "all" ? "active" : ""} onClick={() => selectCalendarTaskFilter("all")}>All current ({selectedPlannerTasks.length})</button>
                       <button type="button" className={calendarTaskFilter === "original" ? "active" : ""} onClick={() => selectCalendarTaskFilter("original")}>Original plan ({selectedOriginalTasks.length})</button>
+                      <button type="button" className={calendarTaskFilter === "rescheduled" ? "active" : ""} onClick={() => selectCalendarTaskFilter("rescheduled")}>Rescheduled ({selectedRescheduledTasks.length})</button>
                       <button type="button" className={calendarTaskFilter === "catchup" ? "active" : ""} onClick={() => selectCalendarTaskFilter("catchup")}>Catch-up ({selectedCatchUpTasks.length})</button>
                     </div>
                   </>
@@ -1218,11 +1229,13 @@ export default function StudyDashboard({
                 {!filteredCalendarTasks.length && <EmptyMessage>{
                   selectedDate === todayKey && calendarTaskFilter === "original"
                     ? "No task belongs to today's original plan."
-                    : selectedDate === todayKey && calendarTaskFilter === "catchup"
-                      ? "No catch-up work is currently on today's working list."
-                      : isStudyDate(selectedDate, studyDays)
-                        ? "No task is assigned on this date."
-                        : "Rest and consolidation day. Missed work will move to the next available study day."
+                    : selectedDate === todayKey && calendarTaskFilter === "rescheduled"
+                      ? "No task from today's original plan has been rescheduled."
+                      : selectedDate === todayKey && calendarTaskFilter === "catchup"
+                        ? "No catch-up work is currently on today's working list."
+                        : isStudyDate(selectedDate, studyDays)
+                          ? "No task is assigned on this date."
+                          : "Rest and consolidation day. Missed work will move to the next available study day."
                 }</EmptyMessage>}
               </div>
             </div>
