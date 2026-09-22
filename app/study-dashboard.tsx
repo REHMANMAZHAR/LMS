@@ -1276,7 +1276,6 @@ export default function StudyDashboard({
                           ? "No task is assigned on this date."
                           : "Rest and consolidation day. Missed work will move to the next available study day."
                 }</EmptyMessage>}
-              </div>
             <div className="range-analytics">
               <div className="section-heading">
                 <div><span className="eyebrow">DATE-RANGE ACTIVITY</span><h2>Study activity from {fullDateLabel(rangeAnalytics.from)} to {fullDateLabel(rangeAnalytics.to)}</h2></div>
