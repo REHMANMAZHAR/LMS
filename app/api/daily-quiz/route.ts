@@ -36,6 +36,9 @@ function adaptiveDailySelection<T extends { id: string; estimatedMinutes?: numbe
   seed: string,
   targetMinutes = 20,
 ) {
+  // Only prior answers for questions in this exact topic/quiz pool may influence
+  // adaptive ranking. Family-wide history must not make an unrelated lesson look weak.
+  const eligible = new Set(questions.map((question) => baseQuestionId(question.id)));
   const seen = new Set<string>();
   const weak = new Set<string>();
   for (const attempt of attempts) {
@@ -44,6 +47,7 @@ function adaptiveDailySelection<T extends { id: string; estimatedMinutes?: numbe
       for (const item of feedback) {
         if (!item.questionId) continue;
         const id = baseQuestionId(item.questionId);
+        if (!eligible.has(id)) continue;
         seen.add(id);
         if (item.status === "skipped" || item.correct === false) weak.add(id);
       }
