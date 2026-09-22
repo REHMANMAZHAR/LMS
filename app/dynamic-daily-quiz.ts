@@ -5,10 +5,11 @@ import { DAILY_QUIZ_VERSION, DAILY_QUIZZES, getDailyQuiz, type DailyQuiz, type P
 import { lessonIdentity, normaliseLessonTitle } from "./lesson-identity";
 import { readManifest } from "./adaptive-plan";
 import { getTopicObjectiveBank } from "./full-topic-objective-bank";
+import { PAST_PAPER_REFERENCES, type PaperReference } from "./past-paper-catalogue";
 
 const FAMILY_ID = "talha-family";
 type BankRow = typeof quizBankQuestions.$inferSelect;
-export type ResolvedQuiz = { quiz: DailyQuiz; version: string; durationSeconds: number; mode: "daily"|"weekly"; missingLessons: string[]; sourceNote: string };
+export type ResolvedQuiz = { quiz: DailyQuiz; version: string; durationSeconds: number; mode: "daily"|"weekly"; missingLessons: string[]; sourceNote: string; verifiedPastPaperReferences: PaperReference[] };
 function fromRows(rows: BankRow[], taskId: string): DailyQuiz | undefined {
   if (!rows.length) return;
   rows.sort((a,b)=>a.questionId.localeCompare(b.questionId));
@@ -54,6 +55,7 @@ export async function resolveDailyQuiz(taskId: string): Promise<ResolvedQuiz | u
   let quiz: DailyQuiz | undefined;
   const missingLessons:string[]=[];
   let mode:"daily"|"weekly"="daily";
+  const referenceTopicIds = new Set<string>();
   if (/^v3:weekly:\d{4}-\d{2}-\d{2}$/.test(taskId)) {
     mode="weekly";
     const end=taskId.slice(-10), startDate=new Date(`${end}T12:00:00Z`);
@@ -65,6 +67,7 @@ export async function resolveDailyQuiz(taskId: string): Promise<ResolvedQuiz | u
     for(const task of studied) {
       const set=resolveOne(task.id);
       if(!set){missingLessons.push(task.lesson.title);continue;}
+      referenceTopicIds.add(set.topicId);
       pools.push({topicId:set.topicId,title:task.lesson.title,questions:set.questions,cursor:0});
     }
     const questions:PrivateQuestion[]=[];
@@ -91,14 +94,18 @@ export async function resolveDailyQuiz(taskId: string): Promise<ResolvedQuiz | u
     }
     if(!questions.length)return;
     quiz={taskId,stream:"Mathematics",topicId:"weekly",lessonTitle:`Weekend Quiz: ${start} to ${end}`,questions};
-  } else quiz=resolveOne(taskId);
+  } else {
+    quiz=resolveOne(taskId);
+    if (quiz?.topicId && quiz.topicId !== "weekly") referenceTopicIds.add(quiz.topicId);
+  }
   if(!quiz)return;
   const target=mode==="weekly"?60:20;
   const estimated=quiz.questions.reduce((sum,q)=>sum+(q.estimatedMinutes ?? 1),0);
   const durationSeconds=(mode==="weekly" ? 60 : Math.min(target,Math.max(1,Math.ceil(estimated))))*60;
   const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify({quiz,missingLessons,version:DAILY_QUIZ_VERSION})));
   const version=Array.from(new Uint8Array(digest)).map(byte=>byte.toString(16).padStart(2,"0")).join("");
-  return {quiz,version,durationSeconds,mode,missingLessons,sourceNote:estimated<target || missingLessons.length
+  const verifiedPastPaperReferences = PAST_PAPER_REFERENCES.filter((entry) => referenceTopicIds.has(entry.topicId)).slice(0, 8);
+  return {quiz,version,durationSeconds,mode,missingLessons,verifiedPastPaperReferences,sourceNote:estimated<target || missingLessons.length
     ? `The quiz covers every completed lesson for which reviewed questions are available. ${estimated} estimated question minutes were selected; ${target} minutes is reserved for the weekend attempt and review.`
     : "A balanced 60-minute quiz was assembled from the lessons completed during this week. Source references remain in the controlled bank."};
 }
