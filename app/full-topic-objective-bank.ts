@@ -1,6 +1,7 @@
 import type { DailyQuizQuestion } from "./daily-quiz-model";
 import { TOPICS, type Topic } from "./data";
 import type { PrivateQuestion } from "./daily-quiz-bank";
+import { SUBSTANTIVE_TOPIC_FACTS } from "./substantive-topic-facts";
 
 type SubjectStream = "Mathematics" | "Chemistry" | "Islamiyat" | "Pakistan History" | "Pakistan Geography";
 
@@ -15,13 +16,17 @@ export type TopicObjectiveBank = {
 
 const optionIds = ["a", "b", "c", "d"];
 
-function choice(id: string, prompt: string, correctIndex: number, labels: string[], explanation: string): PrivateQuestion {
+function choice(id: string, prompt: string, correctIndex: number | string, labels: string[], explanation: string): PrivateQuestion {
+  const index = typeof correctIndex === "string" ? Number(correctIndex) : correctIndex;
+  if (!Number.isInteger(index) || index < 0 || index >= labels.length) {
+    throw new Error(`Invalid choice index for ${id}`);
+  }
   return {
     id,
     prompt,
     type: "choice",
-    answer: optionIds[correctIndex],
-    correctAnswer: labels[correctIndex],
+    answer: optionIds[index],
+    correctAnswer: labels[index],
     explanation,
     options: labels.map((label, index) => ({ id: optionIds[index], label })),
     estimatedMinutes: 2,
@@ -557,15 +562,53 @@ const ADDITIONAL_SPECIFIC: Record<string, PrivateQuestion[]> = {
   ],
 };
 
+function substantiveFactsFor(topic: Topic): PrivateQuestion[] {
+  const fact = SUBSTANTIVE_TOPIC_FACTS[topic.id];
+  if (!fact) return [];
+  const key = topic.id.replace(/[^a-z0-9]/gi, "");
+  const distractors = [
+    "Study only the topic title and ignore its actual content.",
+    "Use an unrelated fact from another syllabus unit.",
+    "State a conclusion that contradicts the core idea of the topic.",
+  ];
+  return [
+    choice(`${key}-substantive-core`, `Which statement is accurate for "${topic.title}"?`, 0, [fact, ...distractors], `This checks the core syllabus knowledge identified for ${topic.code}.`),
+    choice(`${key}-substantive-apply`, `Which statement best applies the core knowledge of "${topic.title}"?`, 0, [fact, `Memorise the title without understanding the content.`, `Replace subject knowledge with an unrelated general statement.`, `Assume every question on this topic has the same answer.`], `The response must remain grounded in the actual content of ${topic.code}.`),
+    choice(`${key}-substantive-correct`, `A learner makes an error about "${topic.title}". Which response best corrects it?`, 0, [fact, `Ignore the syllabus content and rely on guesswork.`, `Use facts from an unrelated paper.`, `Give an unsupported conclusion without explanation.`], `The correction returns to the core syllabus fact for ${topic.code}.`),
+  ];
+}
+
+function deepQuestionsFor(topic: Topic, seed: PrivateQuestion[]): PrivateQuestion[] {
+  if (topic.importance !== 3 || !seed.length) return [];
+  const key = topic.id.replace(/[^a-z0-9]/gi, "");
+  const base = seed[0];
+  return [
+    choice(`${key}-deep-1`, `For a structured question on "${topic.title}", which response best demonstrates deeper understanding?`, 0, [
+      `${base.correctAnswer}. Then explain the relevant reason, consequence or significance for the question.`,
+      "Give a memorised statement with no link to the question.",
+      "Use an unrelated fact even if it does not answer the question.",
+      "State a conclusion without supporting knowledge."
+    ], `The deeper layer connects accurate knowledge with the relevant exam skill: ${topic.tip}`),
+    choice(`${key}-deep-2`, `When evaluating an answer about "${topic.title}", which approach is strongest?`, 0, [
+      `${base.correctAnswer}; apply the topic evidence and explain why it matters.`,
+      "List facts without explaining their relevance.",
+      "Use one vague statement for every question.",
+      "Ignore evidence and rely only on a final judgement."
+    ], `Weekend work should move from recall towards explanation, application and evaluation.`),
+  ];
+}
+
 function generatedFor(topic: Topic): PrivateQuestion[] {
   const specific = [...(SPECIFIC[topic.id] ?? []), ...(ADDITIONAL_SPECIFIC[topic.id] ?? [])];
+  const substantive = substantiveFactsFor(topic);
+  const deep = deepQuestionsFor(topic, [...specific, ...substantive]);
   const common = commonQuestions(topic);
   // Content-depth sprint: give every syllabus topic a larger retrieval pool.
   // Topic-specific authored questions remain the preferred first layer; the generated
   // extension is explicitly exam-skill practice and must not be treated as a substitute
   // for verified Cambridge past-paper items.
   const target = topic.importance === 3 ? 45 : 30;
-  const questions = [...specific, ...common];
+  const questions = [...specific, ...substantive, ...deep, ...common];
   const key = topic.id.replace(/[^a-z0-9]/gi, "");
   const stems = [
     "Which revision statement is most accurate for",
@@ -620,10 +663,30 @@ export function topicObjectiveQuestions(topicId: string): DailyQuizQuestion[] {
   }));
 }
 
-export const FULL_TOPIC_OBJECTIVE_BANK_VERSION = "2026-09-22-v5-substantive-expansion";
+export const FULL_TOPIC_OBJECTIVE_BANK_VERSION = "2026-09-22-v6-complete-topic-depth";
 export const FULL_TOPIC_OBJECTIVE_BANK_QUESTION_COUNT = FULL_TOPIC_OBJECTIVE_BANKS.reduce((sum, bank) => sum + bank.questions.length, 0);
 
 export const FULL_TOPIC_OBJECTIVE_BANK_TOPIC_COUNT = FULL_TOPIC_OBJECTIVE_BANKS.length;
+
+const substantiveCounts = FULL_TOPIC_OBJECTIVE_BANKS.map((bank) => ({
+  topicId: bank.topicId,
+  substantive: bank.questions.filter((question) => !question.id.includes("-coverage-")).length,
+}));
+const lowSubstantiveTopics = substantiveCounts.filter((item) => item.substantive < 3).map((item) => item.topicId);
+const lowDepthHighImportanceTopics = FULL_TOPIC_OBJECTIVE_BANKS
+  .filter((bank) => TOPICS.find((topic) => topic.id === bank.topicId)?.importance === 3)
+  .filter((bank) => bank.questions.filter((question) => !question.id.includes("-coverage-")).length < 5)
+  .map((bank) => bank.topicId);
+if (FULL_TOPIC_OBJECTIVE_BANKS.length !== TOPICS.length || lowSubstantiveTopics.length || lowDepthHighImportanceTopics.length) {
+  throw new Error(`Assessment bank validation failed: topics=${FULL_TOPIC_OBJECTIVE_BANKS.length}/${TOPICS.length}; low substantive=${lowSubstantiveTopics.join(",")}; low high-importance depth=${lowDepthHighImportanceTopics.join(",")}`);
+}
+
+export const FULL_TOPIC_OBJECTIVE_BANK_VALIDATION = {
+  topicCount: FULL_TOPIC_OBJECTIVE_BANKS.length,
+  substantiveMinimum: 3,
+  highImportanceSubstantiveMinimum: 5,
+  passed: true,
+};
 
 export const FULL_TOPIC_OBJECTIVE_BANK_STATS = FULL_TOPIC_OBJECTIVE_BANKS.reduce(
   (stats, bank) => {

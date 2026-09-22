@@ -68,7 +68,9 @@ export async function resolveDailyQuiz(taskId: string): Promise<ResolvedQuiz | u
       const set=resolveOne(task.id);
       if(!set){missingLessons.push(task.lesson.title);continue;}
       referenceTopicIds.add(set.topicId);
-      pools.push({topicId:set.topicId,title:task.lesson.title,questions:set.questions,cursor:0});
+      const deepQuestions = set.questions.filter((question) => question.id.includes("-deep-"));
+      const otherQuestions = set.questions.filter((question) => !question.id.includes("-deep-"));
+      pools.push({topicId:set.topicId,title:task.lesson.title,questions:[...deepQuestions, ...otherQuestions],cursor:0});
     }
     const questions:PrivateQuestion[]=[];
     const seen=new Set<string>();
