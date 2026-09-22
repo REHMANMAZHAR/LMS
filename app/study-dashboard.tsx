@@ -1277,8 +1277,7 @@ export default function StudyDashboard({
                           : "Rest and consolidation day. Missed work will move to the next available study day."
                 }</EmptyMessage>}
               </div>
-            </div>
-            <section className="panel range-analytics">
+            <div className="range-analytics">
               <div className="section-heading">
                 <div><span className="eyebrow">DATE-RANGE ACTIVITY</span><h2>Study activity from {fullDateLabel(rangeAnalytics.from)} to {fullDateLabel(rangeAnalytics.to)}</h2></div>
                 <div className="range-date-controls">
@@ -1304,7 +1303,8 @@ export default function StudyDashboard({
                   </article>;
                 }) : <EmptyMessage>No tasks match this selection for the chosen date range.</EmptyMessage>}
               </div>
-            </section>
+            </div>
+            </div>
             <div className="notification-settings panel"><div><span className="eyebrow">REMINDERS</span><h2>Study notification</h2><p>The browser will ask permission. On devices that restrict background web notifications, the LMS will still show overdue work when opened.</p></div><label>Reminder time<input type="time" value={settings.reminderTime} onChange={(event) => saveSetting("reminderTime", event.target.value)} /></label><button onClick={() => void enableReminders()}>{remindersEnabled ? "Send test notification" : "Enable notifications"}</button></div>
           </section>
         )}
