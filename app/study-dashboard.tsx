@@ -485,6 +485,10 @@ export default function StudyDashboard({
   const [selectedDate, setSelectedDate] = useState(localDateKey());
   const [calendarMonth, setCalendarMonth] = useState(() => localDateKey().slice(0, 7));
   const [calendarTaskFilter, setCalendarTaskFilter] = useState<CalendarTaskFilter>("all");
+  type RangeTaskFilter = "assigned" | "pending" | "completed" | "originalCompleted" | "catchup" | "rescheduled";
+  const [rangeFromDate, setRangeFromDate] = useState(() => moveDate(localDateKey(), -4));
+  const [rangeToDate, setRangeToDate] = useState(localDateKey());
+  const [rangeTaskFilter, setRangeTaskFilter] = useState<RangeTaskFilter>("assigned");
 
   const loadFamilyState = useCallback(async (showError = false) => {
     try {
@@ -695,6 +699,41 @@ export default function StudyDashboard({
       : calendarTaskFilter === "rescheduled"
         ? selectedRescheduledTasks
         : selectedCatchUpTasks;
+  const rangeAnalytics = useMemo(() => {
+    const from = rangeFromDate <= rangeToDate ? rangeFromDate : rangeToDate;
+    const to = rangeFromDate <= rangeToDate ? rangeToDate : rangeFromDate;
+    const inRange = (date: string) => date >= from && date <= to;
+    const assigned: PlannerTask[] = [];
+    planner.canonical.forEach((tasks, date) => {
+      if (inRange(date)) assigned.push(...tasks);
+    });
+    const completedInRange = [...planner.tasksById.values()].filter((task) => {
+      const completedDate = settings[`planner.done.${task.id}`];
+      return Boolean(completedDate && inRange(completedDate));
+    });
+    const completedFromAssigned = completedInRange.filter((task) => {
+      const completedDate = settings[`planner.done.${task.id}`];
+      return inRange(task.originalDate) && completedDate === task.originalDate;
+    });
+    const catchUp = completedInRange.filter((task) => {
+      const completedDate = settings[`planner.done.${task.id}`];
+      return Boolean(completedDate && completedDate !== task.originalDate);
+    });
+    const pending = assigned.filter((task) => !settings[`planner.done.${task.id}`]);
+    const rescheduled = pending.filter((task) => {
+      const movedTo = effectiveDateByTaskId.get(task.id);
+      return Boolean(movedTo && movedTo !== task.originalDate);
+    });
+    const filters: Record<RangeTaskFilter, PlannerTask[]> = {
+      assigned,
+      pending,
+      completed: completedInRange,
+      originalCompleted: completedFromAssigned,
+      catchup: catchUp,
+      rescheduled,
+    };
+    return { from, to, assigned, pending, completedInRange, completedFromAssigned, catchUp, rescheduled, visible: filters[rangeTaskFilter] };
+  }, [effectiveDateByTaskId, planner.canonical, planner.tasksById, rangeFromDate, rangeTaskFilter, rangeToDate, settings]);
   function selectCalendarTaskFilter(filter: CalendarTaskFilter) {
     setCalendarTaskFilter(filter);
   }
@@ -1187,7 +1226,7 @@ export default function StudyDashboard({
                   return <button key={day} className={`${selectedDate === day ? "selected" : ""} ${day === todayKey ? "today" : ""} ${missed ? "missed" : ""}`} title={day === todayKey
                     ? `${fullDateLabel(day)}: ${originallyAssigned} original plan · ${originalRemaining} original remaining · ${catchUp} catch-up completed today`
                     : `${fullDateLabel(day)}: ${originallyAssigned} originally assigned · ${completedThatDay} completed`}
-                    onClick={() => setSelectedDate(day)}><b>{Number(day.slice(-2))}</b>{day === todayKey ? <><span>{catchUp} catch-up done</span>{originallyAssigned > 0 && <small className="calendar-day-planned">{originallyAssigned} planned · {originalRemaining} left · {selectedRescheduledTasks.length} moved</small>}</> : tasks.length > 0 && <span>${done}/${tasks.length}</span>}</button>;
+                    onClick={() => setSelectedDate(day)}><b>{Number(day.slice(-2))}</b>{day === todayKey ? <><span>{catchUp} catch-up done</span>{originallyAssigned > 0 && <small className="calendar-day-planned">{originallyAssigned} planned · {originalRemaining} left · {selectedRescheduledTasks.length} moved</small>}</> : tasks.length > 0 && <span>{done}/{tasks.length}</span>}</button>;
                 })}</div>
               </div>
               <div className="date-tasks panel">
@@ -1239,6 +1278,33 @@ export default function StudyDashboard({
                 }</EmptyMessage>}
               </div>
             </div>
+            <section className="panel range-analytics">
+              <div className="section-heading">
+                <div><span className="eyebrow">DATE-RANGE ACTIVITY</span><h2>Study activity from {fullDateLabel(rangeAnalytics.from)} to {fullDateLabel(rangeAnalytics.to)}</h2></div>
+                <div className="range-date-controls">
+                  <label>From date<input type="date" value={rangeFromDate} onChange={(event) => setRangeFromDate(event.target.value)} /></label>
+                  <label>To date<input type="date" value={rangeToDate} onChange={(event) => setRangeToDate(event.target.value)} /></label>
+                </div>
+              </div>
+              <div className="range-metrics" aria-label="Selected date range totals">
+                <article><button type="button" className={rangeTaskFilter === "assigned" ? "selected" : ""} onClick={() => setRangeTaskFilter("assigned")}><strong>{rangeAnalytics.assigned.length}</strong></button><span>Total Assigned Tasks</span><small>Click the number to view</small></article>
+                <article><button type="button" className={rangeTaskFilter === "pending" ? "selected" : ""} onClick={() => setRangeTaskFilter("pending")}><strong>{rangeAnalytics.pending.length}</strong></button><span>Task Still Pending</span><small>of {rangeAnalytics.assigned.length} assigned · click to view</small></article>
+                <article><button type="button" className={rangeTaskFilter === "completed" ? "selected" : ""} onClick={() => setRangeTaskFilter("completed")}><strong>{rangeAnalytics.completedInRange.length}</strong></button><span>Total Task Completed</span><small>Within selected dates · click to view</small></article>
+                <article><button type="button" className={rangeTaskFilter === "originalCompleted" ? "selected" : ""} onClick={() => setRangeTaskFilter("originalCompleted")}><strong>{rangeAnalytics.completedFromAssigned.length}</strong></button><span>Completed From Assigned Tasks</span><small>Completed on their assigned date · click to view</small></article>
+                <article><button type="button" className={rangeTaskFilter === "catchup" ? "selected" : ""} onClick={() => setRangeTaskFilter("catchup")}><strong>{rangeAnalytics.catchUp.length}</strong></button><span>From Catch-up</span><small>Completed later than original date · click to view</small></article>
+                <article><button type="button" className={rangeTaskFilter === "rescheduled" ? "selected" : ""} onClick={() => setRangeTaskFilter("rescheduled")}><strong>{rangeAnalytics.rescheduled.length}</strong></button><span>Rescheduled</span><small>Out of {rangeAnalytics.pending.length} pending tasks · click to view</small></article>
+              </div>
+              <div className="range-task-list">
+                <div className="section-heading"><div><span className="eyebrow">SELECTED TASKS</span><h3>{rangeTaskFilter === "assigned" ? "All assigned tasks" : rangeTaskFilter === "pending" ? "Pending tasks" : rangeTaskFilter === "completed" ? "All completed in range" : rangeTaskFilter === "originalCompleted" ? "Completed from assigned tasks" : rangeTaskFilter === "catchup" ? "Catch-up completed in range" : "Rescheduled tasks"}</h3></div><strong>{rangeAnalytics.visible.length} task{rangeAnalytics.visible.length === 1 ? "" : "s"}</strong></div>
+                {rangeAnalytics.visible.length ? rangeAnalytics.visible.map((task) => {
+                  const doneDate = settings[`planner.done.${task.id}`];
+                  return <article className="range-task-row" key={task.id}>
+                    <span><b>{task.stream}</b><strong>{task.lesson.title}</strong><small>{task.topic.code} · {task.topic.title}</small></span>
+                    <span className="range-task-status">{calendarTaskStatus(task)}{doneDate && task.originalDate !== doneDate ? <small>Original: {fullDateLabel(task.originalDate)} · Completed: {fullDateLabel(doneDate)}</small> : null}</span>
+                  </article>;
+                }) : <EmptyMessage>No tasks match this selection for the chosen date range.</EmptyMessage>}
+              </div>
+            </section>
             <div className="notification-settings panel"><div><span className="eyebrow">REMINDERS</span><h2>Study notification</h2><p>The browser will ask permission. On devices that restrict background web notifications, the LMS will still show overdue work when opened.</p></div><label>Reminder time<input type="time" value={settings.reminderTime} onChange={(event) => saveSetting("reminderTime", event.target.value)} /></label><button onClick={() => void enableReminders()}>{remindersEnabled ? "Send test notification" : "Enable notifications"}</button></div>
           </section>
         )}
