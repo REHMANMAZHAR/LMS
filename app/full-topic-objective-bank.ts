@@ -299,7 +299,7 @@ function generatedFor(topic: Topic): PrivateQuestion[] {
   // Topic-specific authored questions remain the preferred first layer; the generated
   // extension is explicitly exam-skill practice and must not be treated as a substitute
   // for verified Cambridge past-paper items.
-  const target = specific.length ? 30 : 30;
+  const target = topic.importance === 3 ? 45 : 30;
   const questions = [...specific, ...common];
   const key = topic.id.replace(/[^a-z0-9]/gi, "");
   const stems = [
@@ -355,7 +355,7 @@ export function topicObjectiveQuestions(topicId: string): DailyQuizQuestion[] {
   }));
 }
 
-export const FULL_TOPIC_OBJECTIVE_BANK_VERSION = "2026-09-18-v2";
+export const FULL_TOPIC_OBJECTIVE_BANK_VERSION = "2026-09-22-v3-high-importance-45";
 export const FULL_TOPIC_OBJECTIVE_BANK_QUESTION_COUNT = FULL_TOPIC_OBJECTIVE_BANKS.reduce((sum, bank) => sum + bank.questions.length, 0);
 
 export const FULL_TOPIC_OBJECTIVE_BANK_TOPIC_COUNT = FULL_TOPIC_OBJECTIVE_BANKS.length;
