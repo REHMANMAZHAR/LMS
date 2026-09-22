@@ -638,6 +638,11 @@ export default function StudyDashboard({
     return completion;
   }, [planner.completedTaskIds, planner.tasksById, settings]);
   const todayTasks = planner.effective.get(todayKey) ?? [];
+  const originallyAssignedToday = planner.canonical.get(todayKey) ?? [];
+  const completedTodayTasks = [...planner.tasksById.values()].filter(
+    (task) => settings[`planner.done.${task.id}`] === todayKey,
+  );
+  const catchUpCompletedToday = completedTodayTasks.filter((task) => task.originalDate !== todayKey);
   const todayRemainingTasks = todayTasks.filter((task) => !planner.completedTaskIds.has(task.id));
   const todayRemainingMinutes = todayRemainingTasks.reduce((sum, task) => sum + Math.ceil(task.minutes * (1 - Number(settings[`planner.taskPartial.${task.id}`] || 0) / 100)) + (task.quizMinutes ?? (task.kind === "syllabus" ? 20 : 0)), 0);
   const todayCompletedCount = todayTasks.length - todayRemainingTasks.length;
@@ -1133,7 +1138,7 @@ export default function StudyDashboard({
         {view === "calendar" && (
           <section className="calendar-layout no-top">
             <div className="calendar-summary panel">
-              <div><span className="eyebrow">HOMESCHOOL STUDY PLAN</span><h2>{planner.overdueCount ? `${planner.overdueCount} missed task${planner.overdueCount === 1 ? "" : "s"} safely carried forward` : "All five streams are on schedule"}</h2><p>Each day contains two principal subjects. Weekday lessons use focused three-hour blocks followed by separate 20-minute checks; weekends use one-hour whole-topic assessments. Missed work moves the remaining timeline forward without adding a future lesson to the same day.</p></div>
+              <div><span className="eyebrow">HOMESCHOOL STUDY PLAN</span><h2>{planner.overdueCount ? `${planner.overdueCount} missed task${planner.overdueCount === 1 ? "" : "s"} safely carried forward` : "All five streams are on schedule"}</h2><p>Each day shows its original assignment separately from work completed that day. Catch-up work completed today is counted in today&apos;s activity but is not mistaken for a new assignment.</p></div>
               <div className="timeline-status"><span>Predicted syllabus completion</span><strong>{fullDateLabel(planner.predictedCompletion)}</strong><small>{planner.predictedCompletion <= settings.targetDate ? "Within the current target" : "Later than the current target - adjust time or study days"}</small></div>
             </div>
             <div className="syllabus-bars panel">
@@ -1149,11 +1154,27 @@ export default function StudyDashboard({
                   const tasks = day < todayKey ? (planner.canonical.get(day) ?? []) : (planner.effective.get(day) ?? []);
                   const done = tasks.filter((task) => planner.completedTaskIds.has(task.id)).length;
                   const missed = day < todayKey && tasks.some((task) => !settings[`planner.done.${task.id}`]);
-                  return <button key={day} className={`${selectedDate === day ? "selected" : ""} ${day === todayKey ? "today" : ""} ${missed ? "missed" : ""}`} onClick={() => setSelectedDate(day)}><b>{Number(day.slice(-2))}</b>{tasks.length > 0 && <span>{done}/{tasks.length}</span>}</button>;
+                  const originallyAssigned = (planner.canonical.get(day) ?? []).length;
+                  const completedThatDay = day === todayKey
+                    ? completedTodayTasks.length
+                    : tasks.filter((task) => settings[`planner.done.${task.id}`] === day).length;
+                  const catchUp = day === todayKey ? catchUpCompletedToday.length : 0;
+                  return <button key={day} className={`${selectedDate === day ? "selected" : ""} ${day === todayKey ? "today" : ""} ${missed ? "missed" : ""}`} title={day === todayKey
+                    ? `${fullDateLabel(day)}: ${originallyAssigned} originally assigned · ${completedThatDay} completed today · ${catchUp} catch-up from earlier dates`
+                    : `${fullDateLabel(day)}: ${originallyAssigned} originally assigned · ${completedThatDay} completed`}
+                    onClick={() => setSelectedDate(day)}><b>{Number(day.slice(-2))}</b>{tasks.length > 0 && <span>{day === todayKey ? `${completedThatDay} done` : `${done}/${tasks.length}`}</span>}{day === todayKey && originallyAssigned > 0 && <small className="calendar-day-planned">{originallyAssigned} planned</small>}</button>;
                 })}</div>
               </div>
               <div className="date-tasks panel">
-                <div className="section-heading"><div><span className="eyebrow">ASSIGNED TASKS</span><h2>{fullDateLabel(selectedDate)}</h2></div><strong>{selectedPlannerTasks.reduce((sum, task) => sum + plannedTaskMinutes(task), 0)} min</strong></div>
+                <div className="section-heading"><div><span className="eyebrow">ASSIGNED TASKS</span><h2>{fullDateLabel(selectedDate)}</h2></div><strong>{selectedPlannerTasks.length} task{selectedPlannerTasks.length === 1 ? "" : "s"} · {selectedPlannerTasks.reduce((sum, task) => sum + plannedTaskMinutes(task), 0)} min</strong></div>
+                {selectedDate === todayKey && (
+                  <div className="calendar-day-ledger" aria-label="Today task ledger">
+                    <div><strong>{originallyAssignedToday.length}</strong><span>Originally assigned today</span></div>
+                    <div><strong>{completedTodayTasks.length}</strong><span>Completed today</span></div>
+                    <div><strong>{catchUpCompletedToday.length}</strong><span>Catch-up from earlier dates</span></div>
+                    <p>Today&apos;s completion count includes tasks Talha finished today after carrying them forward from earlier dates. Earlier dates keep their original history.</p>
+                  </div>
+                )}
                 {STUDY_STREAMS.map((stream) => {
                   const subjectTasks = selectedPlannerTasks.filter((task) => task.stream === stream.name);
                   if (!subjectTasks.length) return null;
