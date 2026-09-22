@@ -290,6 +290,102 @@ const SPECIFIC: Record<string, PrivateQuestion[]> = {
     choice("islp24b-2","How many obligatory daily prayers are there?",2,["Three","Four","Five","Seven"],"Muslims perform five obligatory daily prayers."),
     choice("islp24b-3","Congregational prayer especially reinforces…",1,["social isolation","unity and equality in worship","wealth differences","tribal rank"],"Standing together in prayer expresses shared worship and community."),
   ],
+
+  "chem-3-3b": [
+    choice("chem33b-1","If 0.50 mol of Mg reacts with excess hydrochloric acid, how many moles of HCl are required?","0",[ "1.00 mol","0.50 mol","0.25 mol","2.00 mol"],"Mg + 2HCl → MgCl2 + H2, so the mole ratio is 1:2."),
+    choice("chem33b-2","In 2H2 + O2 → 2H2O, 3 mol H2 and 1 mol O2 react. Which is limiting?","1",[ "H2","O2","H2O","Neither"],"One mole of O2 requires two moles of H2; O2 is limiting."),
+    choice("chem33b-3","Why can an excess reactant remain after a reaction?","2",[ "It has no particles","It is always a catalyst","The other reactant is used up first","Products cannot form"],"The limiting reactant is consumed first, so an excess of the other reactant can remain.")
+  ],
+  "chem-3-3c": [
+    choice("chem33c-1","What is the concentration of a solution containing 0.20 mol solute in 0.50 dm³?","3",[ "0.10 mol/dm³","0.25 mol/dm³","0.35 mol/dm³","0.40 mol/dm³"],"Concentration = moles ÷ volume = 0.20 ÷ 0.50 = 0.40 mol/dm³."),
+    choice("chem33c-2","Which unit is commonly used for molar concentration?","0",[ "mol/dm³","g/cm³","cm³/mol","mol/g"],"Amount concentration is expressed in mol per dm³."),
+    choice("chem33c-3","An empirical formula shows the…","1",[ "exact number of molecules","simplest whole-number ratio of atoms","relative atomic masses only","number of neutrons"],"Empirical formula gives the simplest whole-number ratio of elements.")
+  ],
+  "chem-4-1b": [
+    choice("chem41b-1","During electrolysis of molten lead(II) bromide, lead ions are discharged at the…","2",[ "anode","electrolyte surface","cathode","power supply"],"Pb²+ gains electrons at the negative cathode."),
+    choice("chem41b-2","What is the half-equation for formation of chlorine from chloride ions?","0",[ "2Cl− → Cl2 + 2e−","Cl− + e− → Cl","Cl2 + 2e− → 2Cl−","Cl− → Cl2 + e−"],"Oxidation of chloride releases two electrons to form Cl2."),
+    choice("chem41b-3","Electroplating an object with copper requires copper ions to be…","1",[ "oxidised at the object","reduced at the object","removed from solution without electrons","converted into neutrons"],"Cu²+ gains electrons and deposits as copper at the cathode.")
+  ],
+  "chem-6-3": [
+    choice("chem63-1","At equilibrium in a closed system, the forward and reverse reactions…","0",[ "occur at equal rates","stop completely","have equal amounts of reactants","produce no products"],"Dynamic equilibrium has equal forward and reverse rates."),
+    choice("chem63-2","If the concentration of a reactant is increased, equilibrium usually shifts to…","3",[ "the side with fewer particles only","the reactant side","no side","the side that uses up the added reactant"],"The system responds by opposing the concentration increase."),
+    choice("chem63-3","A catalyst changes an equilibrium mixture by…","2",[ "increasing the yield","moving equilibrium permanently","speeding both directions without changing the equilibrium position","removing products"],"A catalyst lowers activation energy for both directions and reaches equilibrium faster.")
+  ],
+  "chem-9-6": [
+    choice("chem96-1","Why is carbon used to extract some metals from their ores?","1",[ "Carbon is always the most reactive element","Carbon can reduce oxides of metals below it in the reactivity series","Carbon supplies neutrons","Carbon prevents all oxidation"],"A metal oxide below carbon can be reduced because carbon is more reactive."),
+    choice("chem96-2","Which metal is commonly extracted by electrolysis rather than carbon reduction?","3",[ "Iron","Copper","Zinc","Aluminium"],"Aluminium is above carbon in the reactivity series."),
+    choice("chem96-3","In extraction, the ore is processed mainly to…","0",[ "obtain a usable metal from its compound","increase the amount of gangue","turn every metal into a gas","remove all electrons"],"Extraction separates and reduces the metal-containing compound to obtain the metal.")
+  ],
+  "math-e2-10": [
+    choice("mathe210-1","For y = x², what is y when x = −3?","2",[ "−9","−6","9","6"],"Squaring −3 gives 9."),
+    choice("mathe210-2","The graph of y = 2x + 1 crosses the y-axis at…","0",[ "1","2","−1","0"],"When x = 0, y = 1."),
+    choice("mathe210-3","What does a point of intersection of two graphs represent?","3",[ "A value that satisfies neither equation","Only the larger x-value","The maximum value always","A pair satisfying both equations"],"The coordinates at the intersection satisfy both relationships.")
+  ],
+  "math-e2-12": [
+    choice("mathe212-1","The derivative of x² is…","1",[ "x","2x","x³","2"],"The power rule gives 2x."),
+    choice("mathe212-2","At a stationary point, the gradient is…","0",[ "0","1","undefined always","−1"],"A stationary point has zero instantaneous gradient."),
+    choice("mathe212-3","For y = 3x² + 2x, dy/dx is…","2",[ "3x + 2","6x + 2","6x² + 2","x² + 2"],"Differentiate term by term: 6x + 2.")
+  ],
+  "math-e4-7": [
+    choice("mathe47-1","The angle at the centre of a circle is how many times the angle at the circumference standing on the same arc?","1",[ "Equal","Twice","Half","Three times"],"The angle at the centre is twice the angle at the circumference."),
+    choice("mathe47-2","An angle in a semicircle is…","0",[ "90°","45°","180°","60°"],"The angle subtended by a diameter at the circumference is a right angle."),
+    choice("mathe47-3","Opposite angles of a cyclic quadrilateral sum to…","3",[ "90°","180°","270°","360°"],"Opposite angles in a cyclic quadrilateral are supplementary.")
+  ],
+  "math-e6-5": [
+    choice("mathe65-1","Which rule relates three sides and an included angle in a non-right-angled triangle?","2",[ "Pythagoras only","Area rule only","Cosine rule","Midpoint rule"],"The cosine rule connects three sides and the included angle."),
+    choice("mathe65-2","The sine rule can be used when a triangle has…","0",[ "a known angle-side opposite pair","only three sides with no angle","only one side","no measurable angle"],"The sine rule requires at least one known opposite side-angle pair."),
+    choice("mathe65-3","When finding an angle with the cosine rule, the final calculator step uses…","1",[ "sin","cos⁻¹","tan⁻¹","√"],"The inverse cosine finds the angle.")
+  ],
+  "math-e7-4": [
+    choice("mathe74-1","If vector AB = b − a, what does this represent?","0",[ "The displacement from A to B","The displacement from B to A","The midpoint","The magnitude only"],"Subtracting position vector a from b gives the directed displacement A to B."),
+    choice("mathe74-2","If two vectors are parallel, one can be written as…","2",[ "their sum only","their difference only","a scalar multiple of the other","a square root"],"Parallel vectors have proportional components."),
+    choice("mathe74-3","A vector proof should normally show…","1",[ "only a diagram","equal vector expressions for the required result","a probability","a statistical average"],"Vector geometry is established by algebraic vector equality.")
+  ],
+  "math-e8-4": [
+    choice("mathe84-1","Conditional probability P(A|B) means probability of…","2",[ "A and B regardless of B","B given A","A given B","neither event"],"The notation reads probability of A given that B has occurred."),
+    choice("mathe84-2","If P(A and B)=0.2 and P(B)=0.5, P(A|B) is…","0",[ "0.4","0.1","0.7","2.5"],"P(A|B)=P(A and B)/P(B)=0.2/0.5=0.4."),
+    choice("mathe84-3","Conditional probability is especially useful when…","3",[ "events are impossible","there is no information","all outcomes are equal","new information changes the relevant sample space"],"Conditioning restricts attention to outcomes consistent with the given event.")
+  ],
+  "pak-kq8": [
+    choice("pakkq8-1","Why was the Simon Commission opposed by many Indian politicians?","1",[ "It granted immediate independence","It had no Indian members","It abolished elections","It supported the Khilafat Movement"],"Its all-British composition was widely criticised."),
+    choice("pakkq8-2","What was a major purpose of the Nehru Report of 1928?","0",[ "Propose a constitutional framework for India","Create Pakistan immediately","End all provincial government","Restore Mughal rule"],"The report proposed constitutional arrangements for self-government."),
+    choice("pakkq8-3","Why did Jinnah present his Fourteen Points?","2",[ "To support British rule permanently","To abolish provincial autonomy","To safeguard Muslim political interests","To end separate electorates"],"The points set out safeguards Jinnah regarded as necessary for Muslims.")
+  ],
+  "pak-kq11": [
+    choice("pakkq11-1","Which was an immediate challenge for Pakistan in 1947?","3",[ "Joining the European Union","Building a navy for the Pacific","Managing an established industrial economy","Resettling refugees and establishing administrative structures"],"Partition created a major refugee and administrative crisis."),
+    choice("pakkq11-2","Why was the Kashmir dispute important soon after independence?","1",[ "It concerned only trade","It involved territory, security and competing claims by India and Pakistan","It ended the Constituent Assembly","It was unrelated to partition"],"Kashmir became a major security and political dispute."),
+    choice("pakkq11-3","What was one reason Pakistan faced economic difficulty in 1947?","0",[ "Much industrial and financial infrastructure was left outside Pakistan","It had too many factories","It controlled all former British reserves","It had no population"],"Partition left Pakistan with a smaller industrial base and financial constraints.")
+  ],
+  "pak-p2-6": [
+    choice("pakp26-1","A favourable balance of trade means…","2",[ "imports exceed exports","exports and imports are always zero","the value of exports exceeds the value of imports","all trade is domestic"],"A favourable balance means export value is greater than import value."),
+    choice("pakp26-2","Why are ports important to Pakistan's trade?","0",[ "They handle bulk imports and exports by sea","They replace all roads","They eliminate customs","They create rainfall"],"Sea transport is efficient for large volumes of international trade."),
+    choice("pakp26-3","Which can increase export competitiveness?","3",[ "Higher transport delays","Poor quality control","Unreliable supply","Improved quality, productivity and market access"],"Competitiveness depends on cost, quality, reliability and access to markets.")
+  ],
+  "pak-p2-8": [
+    choice("pakp28-1","Population density is calculated as…","1",[ "population × area","population ÷ area","area ÷ population","births ÷ deaths"],"Density is people per unit area."),
+    choice("pakp28-2","Which factor can encourage rural-to-urban migration?","0",[ "Employment and services in cities","Lack of all transport","No schools in cities","Lower urban wages always"],"Jobs, education and services can act as urban pull factors."),
+    choice("pakp28-3","Unemployment can be reduced by…","2",[ "reducing skills","closing industries","investment, training and job creation","ending transport"],"Skills and investment can improve employment opportunities.")
+  ],
+  "isl-p1-3e": [
+    choice("islp13e-1","What is one major lesson from the Prophet's final sermon?","0",[ "Human dignity and equality under God","Tribal superiority","Wealth determines worth","Revenge is obligatory"],"The sermon stressed equality, rights and responsibility."),
+    choice("islp13e-2","How did the Prophet demonstrate mercy after the conquest of Makka?","3",[ "He expelled every resident","He destroyed the Ka'ba","He ended all agreements","He granted a broad amnesty"],"The general amnesty demonstrated forgiveness and restraint."),
+    choice("islp13e-3","Why is the Prophet's character studied in Islamiyat?","1",[ "Only to memorise dates","It provides a model for belief, conduct and leadership","It replaces Qur'an study","It concerns politics only"],"His conduct is presented as a practical model for Muslims.")
+  ],
+  "isl-p2-2c": [
+    choice("islp22c-1","Why are major hadith collections important?","2",[ "They replace the Qur'an","They contain only history","They preserve reports used in understanding Sunnah and law","They remove the need for scholarship"],"Hadith collections preserve reports used to understand the Prophet's teachings and practice."),
+    choice("islp22c-2","What is the main purpose of classifying hadith?","0",[ "To assess reliability and status","To change their wording","To remove isnad","To make every report equally strong"],"Classification distinguishes reports according to scholarly criteria."),
+    choice("islp22c-3","How can hadith guide Muslim practice?","1",[ "By providing unrelated stories","By explaining and exemplifying principles of belief and worship","By replacing all reasoning","By eliminating Qur'anic guidance"],"Hadith can explain, illustrate and apply Islamic teachings.")
+  ],
+  "isl-p2-3c": [
+    choice("islp23c-1","Why did Uthman standardise copies of the Qur'an?","3",[ "To shorten it","To add new passages","To translate it into every language","To reduce disputes over recitation and preserve unity"],"Standard copies helped prevent differing readings from becoming divisive."),
+    choice("islp23c-2","What was a major achievement during Uthman's caliphate?","1",[ "Ending all expansion","Continuing expansion of the Muslim state","Abolishing the Qur'an","Moving the capital to Makka"],"The state continued to expand during his rule."),
+    choice("islp23c-3","What contributed to opposition against Uthman?","2",[ "He had no supporters","There were no political disputes","Complaints about governors and administration contributed to unrest","He refused to govern"],"Political grievances and accusations about administration contributed to opposition.")
+  ],
+  "isl-p2-4c": [
+    choice("islp24c-1","Zakat is primarily a duty involving…","0",[ "purification of wealth and support for eligible recipients","pilgrimage only","fasting every day","military service only"],"Zakat purifies wealth and provides an obligatory social duty toward eligible recipients."),
+    choice("islp24c-2","Sawm in Ramadan develops…","2",[ "indifference to others","wealth accumulation","self-discipline and God-consciousness","avoidance of worship"],"Fasting develops self-control, patience and taqwa."),
+    choice("islp24c-3","Which is a social effect of zakat?","1",[ "Increasing inequality deliberately","Supporting vulnerable members of society","Ending all work","Replacing prayer"],"Zakat has a welfare and distributive function.")
+  ],
 };
 
 function generatedFor(topic: Topic): PrivateQuestion[] {
@@ -355,7 +451,7 @@ export function topicObjectiveQuestions(topicId: string): DailyQuizQuestion[] {
   }));
 }
 
-export const FULL_TOPIC_OBJECTIVE_BANK_VERSION = "2026-09-22-v3-high-importance-45";
+export const FULL_TOPIC_OBJECTIVE_BANK_VERSION = "2026-09-22-v4-substantive-expansion";
 export const FULL_TOPIC_OBJECTIVE_BANK_QUESTION_COUNT = FULL_TOPIC_OBJECTIVE_BANKS.reduce((sum, bank) => sum + bank.questions.length, 0);
 
 export const FULL_TOPIC_OBJECTIVE_BANK_TOPIC_COUNT = FULL_TOPIC_OBJECTIVE_BANKS.length;
