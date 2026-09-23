@@ -712,6 +712,20 @@ export default function StudyDashboard({
   }, [planner.canonical, planner.effective, rangeBounds.from, rangeBounds.to, todayKey]);
   const rangeIsSingleSelectedDay = rangeBounds.from === rangeBounds.to && rangeBounds.from === selectedDate;
   const rangeIsToday = rangeBounds.from === todayKey && rangeBounds.to === todayKey;
+  const rangeQuizResults = useMemo(() => familyState.quizAttempts
+    .filter((attempt) => {
+      const date = attempt.createdAt.slice(0, 10);
+      return date >= rangeBounds.from && date <= rangeBounds.to;
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [familyState.quizAttempts, rangeBounds.from, rangeBounds.to]);
+  const rangeTopicQuizResults = rangeQuizResults.filter((attempt) => !attempt.sessionId.startsWith("v3:weekly:"));
+  const rangeWeeklyResults = rangeQuizResults.filter((attempt) => attempt.sessionId.startsWith("v3:weekly:"));
+  const rangeTestResults = useMemo(() => familyState.attempts
+    .filter((attempt) => {
+      const date = attempt.createdAt.slice(0, 10);
+      return date >= rangeBounds.from && date <= rangeBounds.to;
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [familyState.attempts, rangeBounds.from, rangeBounds.to]);
   const calendarDisplayTasks = rangeIsSingleSelectedDay ? filteredCalendarTasks : rangePlannerTasks;
   useEffect(() => {
     setRangeFromDate(selectedDate);
@@ -1255,6 +1269,14 @@ export default function StudyDashboard({
                     </div>
                   </>
                 )}
+                <div className="calendar-results-summary">
+                  <div className="section-heading"><div><span className="eyebrow">ASSESSMENT RESULTS</span><h3>Quiz results &amp; weekly test results</h3></div><strong>{rangeQuizResults.length + rangeTestResults.length} result{rangeQuizResults.length + rangeTestResults.length === 1 ? "" : "s"}</strong></div>
+                  <div className="calendar-results-grid">
+                    <article><strong>Quiz results</strong>{rangeTopicQuizResults.length ? rangeTopicQuizResults.slice(0, 3).map((result) => <div key={result.id}><span>{result.subject} · {dateLabel(result.createdAt)}</span><b>{result.score}/{result.maxScore} · {Math.round(result.score / Math.max(1, result.maxScore) * 100)}%</b></div>) : <small>No topic quiz result in this date range.</small>}</article>
+                    <article><strong>Weekly test results</strong>{rangeWeeklyResults.length ? rangeWeeklyResults.slice(0, 3).map((result) => <div key={result.id}><span>{result.subject} · {dateLabel(result.createdAt)}</span><b>{result.score}/{result.maxScore} · {Math.round(result.score / Math.max(1, result.maxScore) * 100)}%</b></div>) : <small>No weekly test result in this date range.</small>}</article>
+                    <article><strong>Recorded test results</strong>{rangeTestResults.length ? rangeTestResults.slice(0, 3).map((result) => <div key={result.id}><span>{result.subject} · {result.assessmentType} · {dateLabel(result.createdAt)}</span><b>{result.score}/{result.maxScore} · {Math.round(result.score / Math.max(1, result.maxScore) * 100)}%</b></div>) : <small>No recorded test result in this date range.</small>}</article>
+                  </div>
+                </div>
                 {STUDY_STREAMS.map((stream) => {
                   const subjectTasks = calendarDisplayTasks.filter((task) => task.stream === stream.name);
                   if (!subjectTasks.length) return null;
