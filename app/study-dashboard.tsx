@@ -485,10 +485,8 @@ export default function StudyDashboard({
   const [selectedDate, setSelectedDate] = useState(localDateKey());
   const [calendarMonth, setCalendarMonth] = useState(() => localDateKey().slice(0, 7));
   const [calendarTaskFilter, setCalendarTaskFilter] = useState<CalendarTaskFilter>("all");
-  type RangeTaskFilter = "assigned" | "pending" | "completed" | "originalCompleted" | "catchup" | "rescheduled";
   const [rangeFromDate, setRangeFromDate] = useState(localDateKey());
   const [rangeToDate, setRangeToDate] = useState(localDateKey());
-  const [rangeTaskFilter, setRangeTaskFilter] = useState<RangeTaskFilter>("assigned");
 
   const loadFamilyState = useCallback(async (showError = false) => {
     try {
@@ -718,7 +716,6 @@ export default function StudyDashboard({
   useEffect(() => {
     setRangeFromDate(selectedDate);
     setRangeToDate(selectedDate);
-    setRangeTaskFilter("assigned");
   }, [selectedDate]);
 
 
