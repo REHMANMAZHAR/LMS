@@ -1241,6 +1241,13 @@ export default function StudyDashboard({
                   </div>
                   <strong>{calendarDisplayTasks.length} current task{calendarDisplayTasks.length === 1 ? "" : "s"} · {calendarDisplayTasks.reduce((sum, task) => sum + plannedTaskMinutes(task), 0)} min</strong>
                 </div>
+                <div className="calendar-task-filters" role="group" aria-label="Filter calendar working list">
+                  <span>Show:</span>
+                  <button type="button" className={calendarTaskFilter === "all" ? "active" : ""} onClick={() => selectCalendarTaskFilter("all")}>All current ({rangeCurrentTasks.length})</button>
+                  <button type="button" className={calendarTaskFilter === "original" ? "active" : ""} onClick={() => selectCalendarTaskFilter("original")}>Original plan ({rangeOriginalTasks.length})</button>
+                  <button type="button" className={calendarTaskFilter === "rescheduled" ? "active" : ""} onClick={() => selectCalendarTaskFilter("rescheduled")}>Rescheduled ({rangeRescheduledTasks.length})</button>
+                  <button type="button" className={calendarTaskFilter === "catchup" ? "active" : ""} onClick={() => selectCalendarTaskFilter("catchup")}>Catch-up ({rangeCatchupTasks.length})</button>
+                </div>
                 <div className="range-date-controls calendar-range-controls">
                   <label>From date<input type="date" value={rangeFromDate} onChange={(event) => setRangeFromDate(event.target.value)} /></label>
                   <label>To date<input type="date" value={rangeToDate} onChange={(event) => setRangeToDate(event.target.value)} /></label>
@@ -1264,13 +1271,6 @@ export default function StudyDashboard({
                         <strong>{completedTodayTasks.length}</strong><span>Total completed today</span><small>{originalTasksCompletedToday.length} original + {catchUpCompletedToday.length} catch-up</small>
                       </button>
                       <p><b>How the count works:</b> catch-up completed today = total completed today − tasks completed from today&apos;s original plan. Click a card to filter the task list below. Earlier dates retain their original history.</p>
-                    </div>
-                    <div className="calendar-task-filters" role="group" aria-label="Filter today&apos;s calendar tasks">
-                      <span>Show:</span>
-                      <button type="button" className={calendarTaskFilter === "all" ? "active" : ""} onClick={() => selectCalendarTaskFilter("all")}>All current ({selectedPlannerTasks.length})</button>
-                      <button type="button" className={calendarTaskFilter === "original" ? "active" : ""} onClick={() => selectCalendarTaskFilter("original")}>Original plan ({selectedOriginalTasks.length})</button>
-                      <button type="button" className={calendarTaskFilter === "rescheduled" ? "active" : ""} onClick={() => selectCalendarTaskFilter("rescheduled")}>Rescheduled ({selectedRescheduledTasks.length})</button>
-                      <button type="button" className={calendarTaskFilter === "catchup" ? "active" : ""} onClick={() => selectCalendarTaskFilter("catchup")}>Catch-up ({selectedCatchUpTasks.length})</button>
                     </div>
                   </>
                 )}
