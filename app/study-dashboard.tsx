@@ -726,7 +726,12 @@ export default function StudyDashboard({
       return date >= rangeBounds.from && date <= rangeBounds.to;
     })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [familyState.attempts, rangeBounds.from, rangeBounds.to]);
-  const calendarDisplayTasks = rangeIsSingleSelectedDay ? filteredCalendarTasks : rangePlannerTasks;
+  const rangeOriginalTasks = rangeIsToday ? selectedOriginalTasks : rangePlannerTasks.filter((task) => task.originalDate >= rangeBounds.from && task.originalDate <= rangeBounds.to && !task.carriedForward);
+  const rangeRescheduledTasks = rangeIsToday ? selectedRescheduledTasks : rangePlannerTasks.filter((task) => task.carriedForward && task.originalDate >= rangeBounds.from && task.originalDate <= rangeBounds.to && task.scheduledDate !== task.originalDate);
+  const rangeCatchupTasks = rangeIsToday ? selectedCatchUpTasks : rangePlannerTasks.filter((task) => task.carriedForward && task.originalDate < task.scheduledDate);
+  const rangeCurrentTasks = rangeIsToday ? selectedPlannerTasks : rangePlannerTasks;
+  const rangeFilteredTasks = calendarTaskFilter === "original" ? rangeOriginalTasks : calendarTaskFilter === "rescheduled" ? rangeRescheduledTasks : calendarTaskFilter === "catchup" ? rangeCatchupTasks : rangeCurrentTasks;
+  const calendarDisplayTasks = rangeIsSingleSelectedDay && rangeIsToday ? filteredCalendarTasks : rangeFilteredTasks;
   useEffect(() => {
     setRangeFromDate(selectedDate);
     setRangeToDate(selectedDate);
