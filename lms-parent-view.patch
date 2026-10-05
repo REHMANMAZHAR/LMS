@@ -1,0 +1,1715 @@
+From c2a0d781c357075462c33f71a9dd9c6a6f63be98 Mon Sep 17 00:00:00 2001
+From: REHMANMAZHAR <141114420+REHMANMAZHAR@users.noreply.github.com>
+Date: Mon, 5 Oct 2026 11:46:50 +0000
+Subject: [PATCH] Fix build; parent view: overdue recall list, subject workload
+ detail, info tips, PDF progress report
+
+---
+ app/globals.css            |  50 +++++
+ app/parent-insights.tsx    | 117 +++++++++++
+ app/parent-report.ts       | 135 ++++++++++++
+ app/progress-report-pdf.ts | 162 +++++++++++++++
+ app/study-dashboard.tsx    | 151 +++++++++++---
+ package-lock.json          | 416 ++++++++++++++++++++++++-------------
+ package.json               |   2 +
+ 7 files changed, 869 insertions(+), 164 deletions(-)
+ create mode 100644 app/parent-insights.tsx
+ create mode 100644 app/parent-report.ts
+ create mode 100644 app/progress-report-pdf.ts
+
+diff --git a/app/globals.css b/app/globals.css
+index 4808f82..751e6d9 100644
+--- a/app/globals.css
++++ b/app/globals.css
+@@ -523,3 +523,53 @@ a { color:inherit; }
+   .tab-guide-grid article { border-right: 0; border-bottom: 1px solid var(--line); padding: 13px 16px; }
+   .tab-guide-grid article:last-child { border-bottom: 0; }
+ }
++
++/* Parent view: info tips, clickable recalls and subjects, detail dialogs */
++.subject-table { overflow:visible; }
++.info-tip { position:relative; display:inline-flex; vertical-align:middle; margin-left:4px; text-transform:none; letter-spacing:0; }
++.info-tip>button { width:15px; height:15px; padding:0; border:1px solid #b9c7c2; border-radius:50%; background:#fff; color:#245e52; font:italic 700 10px/13px Georgia,serif; cursor:help; }
++.info-tip>button:hover,.info-tip.open>button { background:#245e52; border-color:#245e52; color:#fff; }
++.info-tip>[role="tooltip"] { position:absolute; z-index:30; top:calc(100% + 8px); left:50%; width:min(300px,78vw); transform:translateX(-50%); padding:11px 13px; border-radius:10px; background:var(--ink); color:#eef5f2; font:400 12px/1.5 Arial,Helvetica,sans-serif; text-align:left; box-shadow:0 14px 34px rgba(24,58,55,.25); visibility:hidden; opacity:0; transition:opacity .12s; pointer-events:none; }
++.info-tip:hover>[role="tooltip"],.info-tip>button:focus-visible+[role="tooltip"],.info-tip.open>[role="tooltip"] { visibility:visible; opacity:1; pointer-events:auto; }
++.table-head>span:last-child .info-tip>[role="tooltip"],.alert-panel .info-tip>[role="tooltip"] { left:auto; right:-8px; transform:none; }
++.recall-trigger { display:inline-flex; align-items:baseline; flex-wrap:wrap; gap:10px; padding:0; border:0; background:none; color:inherit; font:inherit; text-align:left; cursor:pointer; text-decoration:underline; text-decoration-color:#e1c38c; text-decoration-thickness:2px; text-underline-offset:6px; }
++.recall-trigger:hover { text-decoration-color:var(--gold); }
++.recall-trigger span { font:800 11px Arial,Helvetica,sans-serif; color:#a0672d; text-decoration:none; border:1px solid #e8cf9f; border-radius:20px; padding:3px 9px; background:#fff; }
++.subject-link { display:inline-flex; align-items:center; gap:8px; padding:3px 0; border:0; background:none; color:var(--ink); font:inherit; font-weight:700; cursor:pointer; text-align:left; text-decoration:underline; text-decoration-color:#c9d6d1; text-underline-offset:4px; }
++.subject-link:hover { text-decoration-color:var(--teal); }
++.subject-link i { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
++.backup-actions button { border:0; border-radius:9px; background:#184d45; color:#fff; padding:9px 12px; font-size:11px; font-weight:800; cursor:pointer; white-space:nowrap; }
++.backup-actions button:disabled { opacity:.6; cursor:progress; }
++.backup-actions a.secondary-link { border:0; background:none; padding:9px 0; color:var(--muted); font-weight:700; text-decoration:underline; text-underline-offset:3px; }
++.form-error { margin:0 0 12px; border:1px solid #e7c2b6; border-radius:10px; background:#f8e8e2; color:#8a4834; padding:10px 12px; font-size:12px; }
++.insight-dialog { position:fixed; inset:0; margin:auto; width:min(760px,calc(100vw - 24px)); max-height:min(86vh,900px); padding:0; border:1px solid var(--line); border-radius:18px; background:var(--card); color:var(--ink); box-shadow:0 30px 80px rgba(24,58,55,.3); }
++.insight-dialog::backdrop { background:rgba(24,58,55,.45); }
++.insight-dialog-body { padding:22px 24px 26px; }
++.insight-dialog header { position:sticky; top:-22px; z-index:2; display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin:-22px -24px 10px; padding:20px 24px 12px; background:var(--card); border-bottom:1px solid var(--line); }
++.insight-dialog header h2 { margin:6px 0 0; font-size:26px; }
++.dialog-close { width:36px; height:36px; flex:0 0 auto; border:1px solid var(--line); border-radius:50%; background:#fff; font-size:20px; line-height:1; cursor:pointer; }
++.dialog-note { margin:8px 0; color:var(--muted); font-size:13px; line-height:1.55; }
++.dialog-section { margin-top:20px; }
++.dialog-section h3 { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:0 0 6px; font-size:15px; }
++.dialog-section h3 small { color:var(--muted); font-size:11px; font-weight:400; }
++.subject-chip { border-radius:5px; color:#fff; padding:3px 6px; font-size:10px; font-weight:800; background:var(--teal); }
++.subject-chip.chem { background:#377e72; } .subject-chip.math { background:#4d63a8; } .subject-chip.pak { background:#a1653c; } .subject-chip.isl { background:#7d588d; }
++.dialog-list { list-style:none; margin:0; padding:0; }
++.dialog-list li { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:14px; align-items:start; padding:10px 0; border-top:1px solid #ece7dc; }
++.dialog-list strong,.dialog-list small { display:block; }
++.dialog-list strong { font-size:13px; }
++.dialog-list small { margin-top:3px; color:var(--muted); font-size:11px; }
++.dialog-list-meta { text-align:right; font-size:12px; font-weight:700; }
++.overdue-tag { display:inline-block; border-radius:20px; padding:2px 8px; background:#f6e1dc; color:#974d3f; font-size:11px; }
++.workload-summary { --subject:var(--teal); margin:6px 0 4px; }
++.workload-bar { height:10px; border-radius:99px; background:#e7e4dc; overflow:hidden; }
++.workload-bar span { display:block; height:100%; border-radius:inherit; background:var(--subject); }
++.workload-summary dl { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:14px 0 0; }
++.workload-summary dl>div { border:1px solid var(--line); border-radius:12px; padding:10px 12px; background:#fff; }
++.workload-summary dt { color:var(--muted); font-size:11px; font-weight:700; }
++.workload-summary dd { margin:4px 0 0; font:700 24px Georgia,serif; }
++.workload-summary dd small { display:block; margin-top:3px; color:var(--muted); font:400 11px Arial,Helvetica,sans-serif; }
++@media(max-width:760px){ .insight-dialog-body{padding:18px 16px 22px} .insight-dialog header{margin:-18px -16px 10px;padding:16px;top:-18px} .workload-summary dl{grid-template-columns:1fr} .dialog-list li{grid-template-columns:1fr} .dialog-list-meta{text-align:left} }
++@media(prefers-reduced-motion:reduce){ .info-tip>[role="tooltip"]{transition:none} }
++.alert-panel h2.recall-heading { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
++.alert-panel h2.recall-heading .info-tip { margin-left:0; }
+diff --git a/app/parent-insights.tsx b/app/parent-insights.tsx
+new file mode 100644
+index 0000000..31aba3d
+--- /dev/null
++++ b/app/parent-insights.tsx
+@@ -0,0 +1,117 @@
++"use client";
++
++import { ReactNode, useEffect, useId, useRef, useState } from "react";
++import { hoursAndMinutes, shortDate, stageLabel, type OverdueRecall, type SubjectWorkload, type TopicWorkloadRow } from "./parent-report";
++
++/** Small "i" button. Hover or focus shows the explanation; a tap toggles it on touch screens. */
++export function InfoTip({ label, children }: { label: string; children: ReactNode }) {
++  const [open, setOpen] = useState(false);
++  const wrapper = useRef<HTMLSpanElement>(null);
++  const tipId = useId();
++  useEffect(() => {
++    if (!open) return;
++    const close = (event: Event) => {
++      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
++      if (event instanceof PointerEvent && wrapper.current?.contains(event.target as Node)) return;
++      setOpen(false);
++    };
++    document.addEventListener("pointerdown", close);
++    document.addEventListener("keydown", close);
++    return () => {
++      document.removeEventListener("pointerdown", close);
++      document.removeEventListener("keydown", close);
++    };
++  }, [open]);
++  return <span className={`info-tip${open ? " open" : ""}`} ref={wrapper}>
++    <button type="button" aria-label={`What does ${label} mean?`} aria-describedby={tipId} aria-expanded={open} onClick={() => setOpen((value) => !value)}>i</button>
++    <span role="tooltip" id={tipId}>{children}</span>
++  </span>;
++}
++
++/** Native modal dialog: traps focus, closes with Escape, the close button or a click outside. */
++export function InsightDialog({ title, kicker, onClose, children }: { title: string; kicker?: string; onClose: () => void; children: ReactNode }) {
++  const dialog = useRef<HTMLDialogElement>(null);
++  const titleId = useId();
++  useEffect(() => {
++    const node = dialog.current;
++    if (node && !node.open) node.showModal();
++    return () => node?.close();
++  }, []);
++  return <dialog
++    ref={dialog}
++    className="insight-dialog"
++    aria-labelledby={titleId}
++    onClose={onClose}
++    onClick={(event) => { if (event.target === dialog.current) onClose(); }}
++  >
++    <div className="insight-dialog-body">
++      <header>
++        <div>{kicker ? <span className="eyebrow">{kicker}</span> : null}<h2 id={titleId}>{title}</h2></div>
++        <button type="button" className="dialog-close" onClick={onClose} aria-label="Close">×</button>
++      </header>
++      {children}
++    </div>
++  </dialog>;
++}
++
++export function OverdueRecallsDialog({ recalls, explanation, onClose }: { recalls: OverdueRecall[]; explanation: string; onClose: () => void }) {
++  const subjects = [...new Set(recalls.map((item) => item.subject))];
++  return <InsightDialog kicker="Parent attention" title={`${recalls.length} overdue recall${recalls.length === 1 ? "" : "s"}`} onClose={onClose}>
++    <p className="dialog-note">{explanation}</p>
++    <p className="dialog-note">Most overdue first. Ask Talha to close the book and explain or solve one question from each topic; re-teach any topic he can&apos;t recall.</p>
++    {subjects.map((subject) => {
++      const rows = recalls.filter((item) => item.subject === subject);
++      return <section key={subject} className="dialog-section">
++        <h3><span className={`subject-chip ${rows[0].subjectClass}`}>{rows[0].subjectShort}</span>{subject} <small>{rows.length} topic{rows.length === 1 ? "" : "s"}</small></h3>
++        <ol className="dialog-list">
++          {rows.map((item) => <li key={item.id}>
++            <div><strong>{item.title}</strong><small>{item.unit}</small></div>
++            <div className="dialog-list-meta">
++              <span className="overdue-tag">{item.overdueBy === 0 ? "Due today" : `${item.overdueBy} day${item.overdueBy === 1 ? "" : "s"} overdue`}</span>
++              <small>{stageLabel(item.stage)} · last studied {shortDate(item.lastStudiedAt)} · recall after {item.waitDays} day{item.waitDays === 1 ? "" : "s"}</small>
++            </div>
++          </li>)}
++        </ol>
++      </section>;
++    })}
++  </InsightDialog>;
++}
++
++function TopicList({ rows, empty, mode }: { rows: TopicWorkloadRow[]; empty: string; mode: "covered" | "remaining" | "maintenance" }) {
++  if (!rows.length) return <p className="dialog-note">{empty}</p>;
++  return <ol className="dialog-list">
++    {rows.map((row) => <li key={row.id}>
++      <div><strong>{row.title}</strong><small>{row.code ? `${row.code} · ` : ""}{row.unit}</small></div>
++      <div className="dialog-list-meta">
++        <span>{hoursAndMinutes(row.minutes)}</span>
++        <small>{mode === "remaining" ? "Not started" : mode === "maintenance" ? "Confident before plan" : `${stageLabel(row.stage)}${row.completedOn ? ` · ${shortDate(row.completedOn)}` : ""}`}</small>
++      </div>
++    </li>)}
++  </ol>;
++}
++
++export function SubjectWorkloadDialog({ workload, onClose }: { workload: SubjectWorkload; onClose: () => void }) {
++  const remainingMinutes = workload.totalMinutes - workload.coveredMinutes;
++  return <InsightDialog kicker="Workload covered" title={workload.subject} onClose={onClose}>
++    <div className="workload-summary" style={{ ["--subject" as string]: workload.color }}>
++      <div className="workload-bar" aria-hidden="true"><span style={{ width: `${workload.coveredPercent}%` }} /></div>
++      <dl>
++        <div><dt>Covered</dt><dd>{workload.coveredPercent}%<small>{hoursAndMinutes(workload.coveredMinutes)} · {workload.covered.length} topics</small></dd></div>
++        <div><dt>Remaining</dt><dd>{100 - workload.coveredPercent}%<small>{hoursAndMinutes(remainingMinutes)} · {workload.remaining.length} topics</small></dd></div>
++        <div><dt>Planned total</dt><dd>{hoursAndMinutes(workload.totalMinutes)}<small>{workload.covered.length + workload.remaining.length} active topics</small></dd></div>
++      </dl>
++    </div>
++    <section className="dialog-section">
++      <h3>Covered <small>{workload.covered.length} topics · {hoursAndMinutes(workload.coveredMinutes)}</small></h3>
++      <TopicList rows={workload.covered} empty="No topic in this subject has been started yet." mode="covered" />
++    </section>
++    <section className="dialog-section">
++      <h3>Remaining <small>{workload.remaining.length} topics · {hoursAndMinutes(remainingMinutes)}</small></h3>
++      <TopicList rows={workload.remaining} empty="Every active topic in this subject has been started." mode="remaining" />
++    </section>
++    {workload.maintenance.length ? <section className="dialog-section">
++      <h3>Already confident <small>{workload.maintenance.length} topics · kept fresh with past papers, not counted above</small></h3>
++      <TopicList rows={workload.maintenance} empty="" mode="maintenance" />
++    </section> : null}
++  </InsightDialog>;
++}
+diff --git a/app/parent-report.ts b/app/parent-report.ts
+new file mode 100644
+index 0000000..0af1cdc
+--- /dev/null
++++ b/app/parent-report.ts
+@@ -0,0 +1,135 @@
++import { STAGES, type SubjectName } from "./data";
++
++/** Minimal activity shape needed for study-time charts. */
++export type StudyActivity = {
++  id: number;
++  kind: string;
++  minutes: number | null;
++  note: string | null;
++  createdAt: string;
++};
++
++/** Days a topic may rest at each stage before its recall check is due. */
++export const RECALL_WAIT_DAYS: Record<number, number> = { 1: 1, 2: 3, 3: 14 };
++
++export function recallWaitDays(stage: number) {
++  return RECALL_WAIT_DAYS[stage] ?? 14;
++}
++
++export function stageLabel(stage: number) {
++  return STAGES[stage] ?? STAGES[0];
++}
++
++export function localDateKey(date = new Date()) {
++  const year = date.getFullYear();
++  const month = String(date.getMonth() + 1).padStart(2, "0");
++  const day = String(date.getDate()).padStart(2, "0");
++  return `${year}-${month}-${day}`;
++}
++
++const TASK_NOTE = /^Task (.+?) (?:completed|reopened) by /;
++
++/**
++ * Net study minutes per local calendar day.
++ *
++ * Re-opening a planner task is logged as a negative row on the day it was
++ * re-opened. Counting that row on its own day produced negative bars (for
++ * example "-180" on a day with no study). Instead, each re-open cancels the
++ * matching completion on the day that completion was originally recorded.
++ */
++export function studyMinutesByDay(activity: readonly StudyActivity[]) {
++  const ordered = [...activity].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id - b.id);
++  const totals = new Map<string, number>();
++  const openCompletions = new Map<string, Array<{ day: string; minutes: number }>>();
++  for (const item of ordered) {
++    const day = localDateKey(new Date(item.createdAt));
++    const taskId = item.note?.match(TASK_NOTE)?.[1];
++    if (item.kind === "planner_uncheck") {
++      const completion = taskId ? openCompletions.get(taskId)?.pop() : undefined;
++      if (completion) totals.set(completion.day, (totals.get(completion.day) ?? 0) - completion.minutes);
++      continue;
++    }
++    const minutes = item.minutes ?? 0;
++    if (minutes <= 0) continue;
++    totals.set(day, (totals.get(day) ?? 0) + minutes);
++    if (item.kind === "planner_task" && taskId) {
++      const stack = openCompletions.get(taskId) ?? [];
++      stack.push({ day, minutes });
++      openCompletions.set(taskId, stack);
++    }
++  }
++  for (const [day, minutes] of totals) totals.set(day, Math.max(0, minutes));
++  return totals;
++}
++
++export function lastDays(count: number, today = new Date()) {
++  return Array.from({ length: count }, (_, offset) => {
++    const date = new Date(today);
++    date.setHours(12, 0, 0, 0);
++    date.setDate(date.getDate() - (count - 1 - offset));
++    return {
++      key: localDateKey(date),
++      label: new Intl.DateTimeFormat("en-GB", { weekday: "short" }).format(date),
++      longLabel: new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" }).format(date),
++    };
++  });
++}
++
++export function hoursAndMinutes(minutes: number) {
++  const safe = Math.max(0, Math.round(minutes));
++  const hours = Math.floor(safe / 60);
++  const rest = safe % 60;
++  if (!hours) return `${rest} min`;
++  return rest ? `${hours} h ${rest} min` : `${hours} h`;
++}
++
++export function shortDate(value: string | null | undefined) {
++  if (!value) return "Not recorded";
++  const date = new Date(value.length === 10 ? `${value}T12:00:00` : value);
++  if (Number.isNaN(date.getTime())) return "Not recorded";
++  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(date);
++}
++
++export type TopicWorkloadRow = {
++  id: string;
++  code: string;
++  unit: string;
++  title: string;
++  minutes: number;
++  stage: number;
++  completedOn: string | null;
++};
++
++export type SubjectWorkload = {
++  subject: SubjectName;
++  color: string;
++  totalMinutes: number;
++  coveredMinutes: number;
++  coveredPercent: number;
++  covered: TopicWorkloadRow[];
++  remaining: TopicWorkloadRow[];
++  maintenance: TopicWorkloadRow[];
++};
++
++export type OverdueRecall = {
++  id: string;
++  subject: SubjectName;
++  subjectShort: string;
++  subjectClass: string;
++  title: string;
++  unit: string;
++  stage: number;
++  lastStudiedAt: string | null;
++  daysSince: number;
++  waitDays: number;
++  overdueBy: number;
++};
++
++/** Plain-language definitions shown behind the "i" buttons and printed in the PDF. */
++export const PARENT_GLOSSARY = {
++  workload: "Share of this subject's planned study time that Talha has started (Learning or beyond). Topics are weighted by their planned minutes, so a long topic counts more than a short one. Already-confident maintenance topics are left out. Select a subject name to see which topics are covered and which remain.",
++  secure: "Topics that reached the Secure stage: passed the subject's secure mark on two different days, including one timed attempt. Shown as secure topics / active topics.",
++  effort: "How much work the subject needs now, from the average of its recorded test scores. Secure for now: 85% or more. Light review: 70–84%. Steady practice: 55–69%. Focused work: 35–54%. Intensive support: below 35%. Starting check: no test has been recorded for this subject yet, so effort can't be judged.",
++  track: "Overall status of the subject. Starting check needed: no test recorded yet, so run the subject's diagnostic test first. Secure progress: average at or above the subject's secure mark and at least 60% of topics Secure. Steady practice: average 70% or more. Focused support: average below 70%, so Talha needs guided help before moving on. The line underneath is the most common reason marks were lost (for example Knowledge gap). Run diagnostic means no lost-mark reason has been recorded yet.",
++  recalls: "A recall is a short closed-book check that a studied topic is still remembered. It falls due 1 day after Learning, 3 days after Practising and 14 days after Secure. Overdue means that wait has passed without the topic being studied or checked again.",
++} as const;
+diff --git a/app/progress-report-pdf.ts b/app/progress-report-pdf.ts
+new file mode 100644
+index 0000000..77228a2
+--- /dev/null
++++ b/app/progress-report-pdf.ts
+@@ -0,0 +1,162 @@
++import { hoursAndMinutes, PARENT_GLOSSARY, shortDate, stageLabel, type OverdueRecall, type SubjectWorkload } from "./parent-report";
++
++export type ReportSubjectRow = {
++  subject: string;
++  workloadPercent: number;
++  secureText: string;
++  effort: string;
++  track: string;
++  topError: string;
++  attempts: number;
++  average: number | null;
++};
++
++export type ProgressReportData = {
++  learnerName: string;
++  targetDate: string;
++  metrics: Array<{ label: string; value: string; note: string }>;
++  week: Array<{ label: string; minutes: number }>;
++  requiredDaily: number;
++  subjects: ReportSubjectRow[];
++  workloads: SubjectWorkload[];
++  overdue: OverdueRecall[];
++  leadingErrors: Array<[string, number]>;
++  dailyChecks: Array<{ title: string; subject: string; date: string; summary: string }>;
++  adaptive: { wrong: number; skipped: number; needsReview: number; message: string };
++};
++
++const INK: [number, number, number] = [24, 58, 55];
++const MUTED: [number, number, number] = [111, 125, 120];
++const LINE: [number, number, number] = [220, 215, 202];
++const HEAD_FILL: [number, number, number] = [240, 236, 227];
++
++/** Standard PDF fonts only cover Latin-1; NFKD turns subscripts (H₂O) and transliteration marks into plain letters. */
++function pdfText(value: string) {
++  return value
++    .replace(/[→⟶]/g, "->")
++    .replace(/[‘’]/g, "'")
++    .replace(/[“”]/g, '"')
++    .replace(/[–—]/g, "-")
++    .replace(/•/g, "*")
++    .normalize("NFKD")
++    .replace(/[\u0300-\u036f]/g, "")
++    .replace(/[^\x09\x0a\x0d\x20-\x7e\u00a0-\u00ff]/g, "");
++}
++
++export async function downloadProgressReport(data: ProgressReportData) {
++  const [{ jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
++  const doc = new jsPDF({ unit: "pt", format: "a4" });
++  const pageWidth = doc.internal.pageSize.getWidth();
++  const margin = 40;
++  const contentWidth = pageWidth - margin * 2;
++  const generated = new Date();
++  let y = margin;
++
++  const lastTableEnd = () => (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y;
++  const ensureSpace = (needed: number) => {
++    if (y + needed > doc.internal.pageSize.getHeight() - margin) { doc.addPage(); y = margin; }
++  };
++  const heading = (text: string, note?: string) => {
++    ensureSpace(note ? 60 : 40);
++    y += 18;
++    doc.setFont("times", "bold").setFontSize(15).setTextColor(...INK).text(pdfText(text), margin, y);
++    y += 6;
++    if (note) {
++      doc.setFont("helvetica", "normal").setFontSize(8.5).setTextColor(...MUTED);
++      const lines = doc.splitTextToSize(pdfText(note), contentWidth);
++      doc.text(lines, margin, y + 10);
++      y += 10 + lines.length * 10;
++    }
++    y += 4;
++  };
++  const table = (head: string[], body: Array<Array<string | number>>, columnStyles: Record<number, { cellWidth?: number | "auto"; halign?: "left" | "right" | "center" }> = {}) => {
++    autoTable(doc, {
++      startY: y,
++      margin: { left: margin, right: margin },
++      head: [head.map(pdfText)],
++      body: body.map((row) => row.map((cell) => pdfText(String(cell)))),
++      theme: "grid",
++      styles: { font: "helvetica", fontSize: 8, cellPadding: 4, textColor: INK, lineColor: LINE, lineWidth: 0.5, valign: "top" },
++      headStyles: { fillColor: HEAD_FILL, textColor: MUTED, fontStyle: "bold", fontSize: 7.5 },
++      columnStyles,
++    });
++    y = lastTableEnd() + 6;
++  };
++
++  // Title block
++  doc.setFont("times", "bold").setFontSize(22).setTextColor(...INK).text(pdfText(`${data.learnerName} · CIE progress report`), margin, y + 16);
++  y += 34;
++  doc.setFont("helvetica", "normal").setFontSize(9).setTextColor(...MUTED)
++    .text(pdfText(`Generated ${shortDate(generated.toISOString())} ${new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" }).format(generated)} · Syllabus target ${shortDate(data.targetDate)}`), margin, y);
++  y += 8;
++
++  heading("Summary");
++  table(data.metrics.map((item) => item.label), [data.metrics.map((item) => item.value), data.metrics.map((item) => item.note)]);
++
++  heading("Study time, last 7 days", `Total ${hoursAndMinutes(data.week.reduce((sum, day) => sum + day.minutes, 0))}. Daily target is about ${data.requiredDaily} minutes on each study day. Re-opened tasks are removed from the day they were first completed.`);
++  table(data.week.map((day) => day.label), [data.week.map((day) => `${day.minutes} min`)]);
++
++  heading("Progress, effort and next focus by subject");
++  table(
++    ["Subject", "Workload covered", "Secure", "Tests", "Effort needed", "Present need", "Main lost-mark reason"],
++    data.subjects.map((row) => [row.subject, `${row.workloadPercent}%`, row.secureText, row.attempts ? `${row.attempts} · avg ${row.average}%` : "None", row.effort, row.track, row.topError]),
++  );
++
++  heading("What the columns mean");
++  table(["Term", "Meaning"], [
++    ["Workload covered", PARENT_GLOSSARY.workload.replace(/ Select a subject name.*$/, "")],
++    ["Secure", PARENT_GLOSSARY.secure],
++    ["Effort needed", PARENT_GLOSSARY.effort],
++    ["Present need", PARENT_GLOSSARY.track],
++    ["Recalls", PARENT_GLOSSARY.recalls],
++  ], { 0: { cellWidth: 95 } });
++
++  heading(data.overdue.length ? `Overdue recalls (${data.overdue.length})` : "Overdue recalls", data.overdue.length ? "Most overdue first." : "Recall schedule is clear.");
++  if (data.overdue.length) {
++    table(
++      ["Subject", "Topic", "Stage", "Last studied", "Overdue"],
++      data.overdue.map((item) => [item.subject, item.title, stageLabel(item.stage), shortDate(item.lastStudiedAt), item.overdueBy ? `${item.overdueBy} d` : "Today"]),
++      { 1: { cellWidth: 200 }, 4: { halign: "right" } },
++    );
++  }
++
++  if (data.leadingErrors.length) {
++    heading("Most frequent sources of lost marks");
++    table(["Reason", "Times recorded"], data.leadingErrors.map(([reason, count]) => [reason, count]), { 1: { halign: "right", cellWidth: 90 } });
++  }
++
++  heading("Adaptive review queue", data.adaptive.message);
++  table(["Wrong", "Skipped", "Attempts needing review"], [[data.adaptive.wrong, data.adaptive.skipped, data.adaptive.needsReview]]);
++
++  if (data.dailyChecks.length) {
++    heading("Recent daily checks");
++    table(["Date", "Subject", "Outcome", "Next step"], data.dailyChecks.map((item) => [item.date, item.subject, item.title, item.summary]), { 0: { cellWidth: 55 }, 1: { cellWidth: 75 }, 2: { cellWidth: 85 } });
++  }
++
++  for (const workload of data.workloads) {
++    doc.addPage();
++    y = margin;
++    heading(`${workload.subject}: workload covered ${workload.coveredPercent}%`, `${hoursAndMinutes(workload.coveredMinutes)} of ${hoursAndMinutes(workload.totalMinutes)} planned study time started. ${workload.covered.length} topics covered, ${workload.remaining.length} remaining.`);
++    heading(`Covered (${workload.covered.length})`);
++    if (workload.covered.length) {
++      table(["Code", "Topic", "Unit", "Stage", "Since", "Time"], workload.covered.map((row) => [row.code, row.title, row.unit, stageLabel(row.stage), shortDate(row.completedOn), hoursAndMinutes(row.minutes)]), { 1: { cellWidth: 170 }, 5: { halign: "right" } });
++    } else table(["Covered"], [["No topic in this subject has been started yet."]]);
++    heading(`Remaining (${workload.remaining.length})`);
++    if (workload.remaining.length) {
++      table(["Code", "Topic", "Unit", "Time"], workload.remaining.map((row) => [row.code, row.title, row.unit, hoursAndMinutes(row.minutes)]), { 1: { cellWidth: 210 }, 3: { halign: "right" } });
++    } else table(["Remaining"], [["Every active topic in this subject has been started."]]);
++    if (workload.maintenance.length) {
++      heading(`Already confident (${workload.maintenance.length})`, "Kept fresh with past-paper practice; not counted in workload.");
++      table(["Code", "Topic", "Unit"], workload.maintenance.map((row) => [row.code, row.title, row.unit]));
++    }
++  }
++
++  const pages = doc.getNumberOfPages();
++  for (let page = 1; page <= pages; page += 1) {
++    doc.setPage(page);
++    doc.setFont("helvetica", "normal").setFontSize(7.5).setTextColor(...MUTED)
++      .text(pdfText(`${data.learnerName} · progress report · page ${page} of ${pages}`), pageWidth / 2, doc.internal.pageSize.getHeight() - 20, { align: "center" });
++  }
++
++  doc.save(`talha-progress-report-${generated.toISOString().slice(0, 10)}.pdf`);
++}
+diff --git a/app/study-dashboard.tsx b/app/study-dashboard.tsx
+index 1c97277..4bbcc80 100644
+--- a/app/study-dashboard.tsx
++++ b/app/study-dashboard.tsx
+@@ -38,6 +38,8 @@ import { buildAdaptivePlanner, readManifest, taskTime } from "./adaptive-plan";
+ import WeeklyReview from "./weekly-review";
+ import TargetPlanner from "./target-planner";
+ import type { PlannedTask } from "./adaptive-plan";
++import { InfoTip, OverdueRecallsDialog, SubjectWorkloadDialog } from "./parent-insights";
++import { PARENT_GLOSSARY, lastDays, recallWaitDays, studyMinutesByDay, type OverdueRecall, type SubjectWorkload } from "./parent-report";
+ 
+ type View = "today" | "calendar" | "syllabus" | "dates" | "quizzes" | "tests" | "plan" | "parent" | "help";
+ type CalendarTaskFilter = "all" | "original" | "rescheduled" | "catchup";
+@@ -568,6 +570,10 @@ export default function StudyDashboard({
+     (topic: Topic) => Math.max(progressMap.get(topic.id)?.stage ?? 0, archivedCompletedTopicIds.has(topic.id) ? 1 : 0),
+     [archivedCompletedTopicIds, progressMap],
+   );
++  const completedOnFor = useCallback(
++    (topic: Topic) => progressMap.get(topic.id)?.lastStudiedAt ?? (archivedCompletedTopicIds.has(topic.id) ? familyState.archivedCompletions[topic.id] ?? null : null),
++    [archivedCompletedTopicIds, familyState.archivedCompletions, progressMap],
++  );
+ 
+   const stats = useMemo<Stats>(() => {
+     const activeTopics = TOPICS.filter((topic) => !maintenanceTopicIds.has(topic.id));
+@@ -697,7 +703,7 @@ export default function StudyDashboard({
+       : calendarTaskFilter === "rescheduled"
+         ? selectedRescheduledTasks
+         : selectedCatchUpTasks;
+-  const rangeAnalyti  const rangeBounds = useMemo(() => ({
++  const rangeBounds = useMemo(() => ({
+     from: rangeFromDate <= rangeToDate ? rangeFromDate : rangeToDate,
+     to: rangeFromDate <= rangeToDate ? rangeToDate : rangeFromDate,
+   }), [rangeFromDate, rangeToDate]);
+@@ -732,10 +738,13 @@ export default function StudyDashboard({
+   const rangeCurrentTasks = rangeIsToday ? selectedPlannerTasks : rangePlannerTasks;
+   const rangeFilteredTasks = calendarTaskFilter === "original" ? rangeOriginalTasks : calendarTaskFilter === "rescheduled" ? rangeRescheduledTasks : calendarTaskFilter === "catchup" ? rangeCatchupTasks : rangeCurrentTasks;
+   const calendarDisplayTasks = rangeIsSingleSelectedDay && rangeIsToday ? filteredCalendarTasks : rangeFilteredTasks;
+-  useEffect(() => {
++  // Picking a new calendar day resets the working-list range to that day (adjusted during render, not in an effect).
++  const [rangeAnchorDate, setRangeAnchorDate] = useState(selectedDate);
++  if (rangeAnchorDate !== selectedDate) {
++    setRangeAnchorDate(selectedDate);
+     setRangeFromDate(selectedDate);
+     setRangeToDate(selectedDate);
+-  }, [selectedDate]);
++  }
+ 
+ 
+   function selectCalendarTaskFilter(filter: CalendarTaskFilter) {
+@@ -1312,7 +1321,7 @@ export default function StudyDashboard({
+           <section className="section-block no-top">
+ 
+             <div className="panel today-syllabus-lessons">
+-              <div className="section-heading"><div><span className="eyebrow">TODAY'S SYLLABUS LESSONS</span><h2>The exact work assigned today</h2></div><span className="quiet">These lesson names remain linked to their full Cambridge syllabus topics.</span></div>
++              <div className="section-heading"><div><span className="eyebrow">TODAY&apos;S SYLLABUS LESSONS</span><h2>The exact work assigned today</h2></div><span className="quiet">These lesson names remain linked to their full Cambridge syllabus topics.</span></div>
+               <div className="today-checklist">{todayTasks.filter((task) => task.kind === "syllabus").map((task) => {
+                 const checked = planner.completedTaskIds.has(task.id);
+                 const checkOutcome = dailyCheckOutcomeByTask.get(task.id);
+@@ -1463,7 +1472,7 @@ export default function StudyDashboard({
+           </section>
+         )}
+ 
+-        {view === "parent" && <ParentView progressMap={progressMap} activity={familyState.activity} attempts={familyState.attempts} quizAttempts={familyState.quizAttempts} stats={stats} settings={settings} requiredDaily={requiredDaily} />}
++        {view === "parent" && <ParentView progressMap={progressMap} stageFor={progressStageFor} completedOn={completedOnFor} maintenanceTopicIds={maintenanceTopicIds} activity={familyState.activity} attempts={familyState.attempts} quizAttempts={familyState.quizAttempts} stats={stats} settings={settings} requiredDaily={requiredDaily} />}
+       </main>
+       {dailyQuizTaskId && <DailyQuizView taskId={dailyQuizTaskId} onClose={() => setDailyQuizTaskId(null)} onCompleted={handleDailyQuizCompleted} />}
+     </div>
+@@ -1498,18 +1507,45 @@ function QuizBankSyncCard() {
+   return <div className="panel"><div className="section-heading"><div><span className="eyebrow">CONTROLLED QUIZ BANK</span><h2>Google Sheet publishing</h2></div><a href="https://docs.google.com/spreadsheets/d/1IFCOQogNrT9UhwzjLjIzZlLxwqVtQ8_NOsrQfrGSEXI/edit" target="_blank" rel="noreferrer">Open question editor</a></div><p>{status}</p><button type="button" onClick={() => void syncNow()} disabled={syncing}>{syncing ? "Checking..." : "Validate and sync approved rows"}</button><p className="panel-note">Only valid Approved rows publish. Questions are matched by task identity or exact topic and lesson title; unrelated lessons are never substituted. Draft and Reviewed rows stay unpublished. Any invalid Approved row cancels the import and preserves the working bank.</p></div>;
+ }
+ 
+-function ParentView({ progressMap, activity, attempts, quizAttempts, stats, settings, requiredDaily }: { progressMap: Map<string, ProgressItem>; activity: ActivityItem[]; attempts: AssessmentAttempt[]; quizAttempts: QuizAttemptItem[]; stats: Stats; settings: Record<string, string>; requiredDaily: number }) {
+-  const recent = Array.from({ length: 7 }, (_, offset) => {
+-    const date = new Date(); date.setDate(date.getDate() - (6 - offset));
+-    const key = date.toISOString().slice(0, 10);
+-    const rows = activity.filter((item) => item.createdAt.slice(0, 10) === key);
+-    return { key, label: new Intl.DateTimeFormat("en-GB", { weekday: "short" }).format(date), minutes: rows.reduce((sum, item) => sum + (item.minutes ?? 0), 0) };
+-  });
++type ParentSubjectStat = {
++  subject: SubjectName;
++  total: number;
++  mastered: number;
++  attemptCount: number;
++  average: number;
++  topError: string;
++  track: string;
++  effort: string;
++  workload: SubjectWorkload;
++};
++
++function ParentView({ progressMap, stageFor, completedOn, maintenanceTopicIds, activity, attempts, quizAttempts, stats, settings, requiredDaily }: { progressMap: Map<string, ProgressItem>; stageFor: (topic: Topic) => number; completedOn: (topic: Topic) => string | null; maintenanceTopicIds: ReadonlySet<string>; activity: ActivityItem[]; attempts: AssessmentAttempt[]; quizAttempts: QuizAttemptItem[]; stats: Stats; settings: Record<string, string>; requiredDaily: number }) {
++  const [showRecalls, setShowRecalls] = useState(false);
++  const [openSubject, setOpenSubject] = useState<SubjectName | null>(null);
++  const [reportBusy, setReportBusy] = useState(false);
++  const [reportError, setReportError] = useState("");
++  const minutesByDay = useMemo(() => studyMinutesByDay(activity), [activity]);
++  const recent = lastDays(7).map((day) => ({ ...day, minutes: minutesByDay.get(day.key) ?? 0 }));
+   const maxMinutes = Math.max(60, ...recent.map((day) => day.minutes));
+-  const subjectStats = SUBJECTS.map((subject) => {
+-    const topics = TOPICS.filter((topic) => topic.subject === subject);
+-    const covered = topics.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) >= 1).length;
+-    const mastered = topics.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) >= 3).length;
++  const subjectStats: ParentSubjectStat[] = SUBJECTS.map((subject) => {
++    const allTopics = TOPICS.filter((topic) => topic.subject === subject);
++    const topics = allTopics.filter((topic) => !maintenanceTopicIds.has(topic.id));
++    const row = (topic: Topic) => ({ id: topic.id, code: topic.code, unit: topic.unit, title: topic.title, minutes: topic.minutes, stage: stageFor(topic), completedOn: completedOn(topic) });
++    const covered = topics.filter((topic) => stageFor(topic) >= 1).map(row);
++    const remaining = topics.filter((topic) => stageFor(topic) < 1).map(row);
++    const totalMinutes = topics.reduce((sum, topic) => sum + topic.minutes, 0);
++    const coveredMinutes = covered.reduce((sum, topic) => sum + topic.minutes, 0);
++    const workload: SubjectWorkload = {
++      subject,
++      color: SUBJECT_META[subject].color,
++      totalMinutes,
++      coveredMinutes,
++      coveredPercent: totalMinutes ? Math.round((coveredMinutes / totalMinutes) * 100) : 0,
++      covered,
++      remaining,
++      maintenance: allTopics.filter((topic) => maintenanceTopicIds.has(topic.id)).map(row),
++    };
++    const mastered = topics.filter((topic) => stageFor(topic) >= 3).length;
+     const subjectAttempts = attempts.filter((attempt) => attempt.subject === subject);
+     const average = subjectAttempts.length
+       ? Math.round(subjectAttempts.reduce((sum, attempt) => sum + percentage(attempt.score, attempt.maxScore), 0) / subjectAttempts.length)
+@@ -1520,8 +1556,9 @@ function ParentView({ progressMap, activity, attempts, quizAttempts, stats, sett
+         errorCounts.set(attempt.errorCategory, (errorCounts.get(attempt.errorCategory) ?? 0) + 1);
+       }
+     });
+-    const topError = [...errorCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "Run diagnostic";
+-    const secureRate = Math.round((mastered / topics.length) * 100);
++    const topError = [...errorCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
++      ?? (subjectAttempts.length ? "No repeated error" : "Run diagnostic");
++    const secureRate = topics.length ? Math.round((mastered / topics.length) * 100) : 0;
+     const profile = SUBJECT_PROFILES[subject];
+     const track = !subjectAttempts.length
+       ? "Starting check needed"
+@@ -1530,9 +1567,30 @@ function ParentView({ progressMap, activity, attempts, quizAttempts, stats, sett
+         : average >= 70
+           ? "Steady practice"
+           : "Focused support";
+-    return { subject, total: topics.length, covered, mastered, average, topError, track, profile };
++    // A real average of 0% is still evidence; only "no tests yet" means a starting check is needed.
++    const effort = subjectAttempts.length ? effortGuidance(average, topError).effort : "Starting check";
++    return { subject, total: topics.length, mastered, attemptCount: subjectAttempts.length, average, topError, track, effort, workload };
+   });
+-  const overdue = TOPICS.filter((topic) => isRevisionDue(progressMap.get(topic.id)));
++  const overdue: OverdueRecall[] = TOPICS.filter((topic) => isRevisionDue(progressMap.get(topic.id)))
++    .map((topic) => {
++      const item = progressMap.get(topic.id)!;
++      const daysSince = relativeAge(item.lastStudiedAt);
++      const waitDays = recallWaitDays(item.stage);
++      return {
++        id: topic.id,
++        subject: topic.subject,
++        subjectShort: SUBJECT_META[topic.subject].short,
++        subjectClass: subjectClass(topic.subject),
++        title: topic.title,
++        unit: topic.unit,
++        stage: item.stage,
++        lastStudiedAt: item.lastStudiedAt,
++        daysSince,
++        waitDays,
++        overdueBy: Math.max(0, daysSince - waitDays),
++      };
++    })
++    .sort((a, b) => b.overdueBy - a.overdueBy || a.subject.localeCompare(b.subject));
+   const errorCounts = new Map<string, number>();
+   attempts.forEach((attempt) => {
+     if (attempt.errorCategory && attempt.errorCategory !== "No major error") {
+@@ -1554,13 +1612,58 @@ function ParentView({ progressMap, activity, attempts, quizAttempts, stats, sett
+     : adaptiveEvidence.wrong
+       ? `${adaptiveEvidence.wrong} wrong answer${adaptiveEvidence.wrong === 1 ? "" : "s"} remain in the recent adaptive review queue.`
+       : "No skipped or wrong adaptive-check evidence is currently waiting for attention.";
++  const dailyCheckCount = activity.filter((item) => item.kind === "daily-check").length;
++  const openWorkload = subjectStats.find((item) => item.subject === openSubject)?.workload;
++
++  async function downloadReport() {
++    setReportBusy(true);
++    setReportError("");
++    try {
++      const { downloadProgressReport } = await import("./progress-report-pdf");
++      await downloadProgressReport({
++        learnerName: "Talha",
++        targetDate: settings.targetDate,
++        metrics: [
++          { label: "Syllabus covered", value: `${stats.coverage}%`, note: `${stats.learned} of ${stats.total} topics` },
++          { label: "Evidence secure", value: `${stats.mastery}%`, note: `${stats.mastered} topics with proof` },
++          { label: "Evidence readiness", value: `${stats.readiness}%`, note: "not a predicted grade" },
++          { label: "Daily checks recorded", value: String(dailyCheckCount), note: `${stats.timedEvidence} timed exam attempts` },
++          { label: "Overdue recalls", value: String(overdue.length), note: "topics waiting for a recall check" },
++        ],
++        week: recent.map((day) => ({ label: day.longLabel, minutes: day.minutes })),
++        requiredDaily,
++        subjects: subjectStats.map((item) => ({
++          subject: item.subject,
++          workloadPercent: item.workload.coveredPercent,
++          secureText: `${item.total ? Math.round((item.mastered / item.total) * 100) : 0}% (${item.mastered}/${item.total})`,
++          effort: item.effort,
++          track: item.track,
++          topError: item.topError,
++          attempts: item.attemptCount,
++          average: item.attemptCount ? item.average : null,
++        })),
++        workloads: subjectStats.map((item) => item.workload),
++        overdue,
++        leadingErrors,
++        dailyChecks: recentDailyChecks.map((item) => ({ title: dailyCheckOutcome(item.note) ?? "Check completed", subject: item.subject ?? "Study lesson", date: dateLabel(item.createdAt), summary: dailyCheckSummary(item.note) })),
++        adaptive: { ...adaptiveEvidence, message: adaptiveMessage },
++      });
++    } catch (error) {
++      setReportError(error instanceof Error ? `Report could not be created: ${error.message}` : "Report could not be created.");
++    } finally {
++      setReportBusy(false);
++    }
++  }
++
+   return <section className="parent-layout no-top">
+     <QuizBankSyncCard />
+-    <div className="metrics-row"><article><span>Syllabus covered</span><strong>{stats.coverage}%</strong><small>{stats.learned} of {stats.total} topics</small></article><article><span>Evidence Secure</span><strong>{stats.mastery}%</strong><small>{stats.mastered} topics with proof</small></article><article><span>Evidence readiness</span><strong>{stats.readiness}%</strong><small>not a predicted grade</small></article><article><span>Daily checks recorded</span><strong>{activity.filter((item) => item.kind === "daily-check").length}</strong><small>{stats.timedEvidence} timed exam attempts</small></article></div>
+-    <div className="parent-grid"><div className="panel activity-panel"><div className="section-heading"><div><span className="eyebrow">LAST 7 DAYS</span><h2>Study consistency</h2></div><strong>{recent.reduce((sum, day) => sum + day.minutes, 0)} min</strong></div><div className="weekly-bars">{recent.map((day) => <div key={day.key}><div className="bar-track"><span style={{ height: `${Math.max(4, (day.minutes / maxMinutes) * 100)}%` }}><b>{day.minutes || ""}</b></span></div><small>{day.label}</small></div>)}</div><p className="panel-note">Daily target currently requires approximately <strong>{requiredDaily} minutes</strong> on each study day.</p></div>
+-      <div className="panel alert-panel"><span className="eyebrow">PARENT ATTENTION</span><h2>{overdue.length ? `${overdue.length} recalls are overdue` : "Recall schedule is clear"}</h2>{leadingErrors.length ? <><p>Most frequent sources of lost marks:</p><ul>{leadingErrors.map(([error, count]) => <li key={error}><span>{count}×</span><div><strong>{error}</strong><small>Use the correction note, then re-test on a different date.</small></div></li>)}</ul></> : overdue.length ? <ul>{overdue.slice(0, 4).map((topic) => <li key={topic.id}><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><div><strong>{topic.title}</strong><small>Last studied {dateLabel(progressMap.get(topic.id)?.lastStudiedAt)}</small></div></li>)}</ul> : <p>Run the four subject diagnostics to reveal the first performance priorities.</p>}</div></div>
++    <div className="metrics-row"><article><span>Syllabus covered</span><strong>{stats.coverage}%</strong><small>{stats.learned} of {stats.total} topics</small></article><article><span>Evidence Secure</span><strong>{stats.mastery}%</strong><small>{stats.mastered} topics with proof</small></article><article><span>Evidence readiness</span><strong>{stats.readiness}%</strong><small>not a predicted grade</small></article><article><span>Daily checks recorded</span><strong>{dailyCheckCount}</strong><small>{stats.timedEvidence} timed exam attempts</small></article></div>
++    <div className="parent-grid"><div className="panel activity-panel"><div className="section-heading"><div><span className="eyebrow">LAST 7 DAYS</span><h2>Study consistency</h2></div><strong>{recent.reduce((sum, day) => sum + day.minutes, 0)} min</strong></div><div className="weekly-bars">{recent.map((day) => <div key={day.key} title={`${day.longLabel}: ${day.minutes} min`}><div className="bar-track"><span style={{ height: `${Math.max(4, (day.minutes / maxMinutes) * 100)}%` }}><b>{day.minutes || ""}</b></span></div><small>{day.label}</small></div>)}</div><p className="panel-note">Daily target currently requires approximately <strong>{requiredDaily} minutes</strong> on each study day.</p></div>
++      <div className="panel alert-panel"><span className="eyebrow">PARENT ATTENTION</span>{overdue.length ? <h2 className="recall-heading"><button type="button" className="recall-trigger" onClick={() => setShowRecalls(true)}>{overdue.length} recall{overdue.length === 1 ? " is" : "s are"} overdue<span>View list</span></button><InfoTip label="overdue recalls">{PARENT_GLOSSARY.recalls}</InfoTip></h2> : <h2>Recall schedule is clear</h2>}{leadingErrors.length ? <><p>Most frequent sources of lost marks:</p><ul>{leadingErrors.map(([error, count]) => <li key={error}><span>{count}×</span><div><strong>{error}</strong><small>Use the correction note, then re-test on a different date.</small></div></li>)}</ul></> : overdue.length ? <ul>{overdue.slice(0, 4).map((topic) => <li key={topic.id}><span className={topic.subjectClass}>{topic.subjectShort}</span><div><strong>{topic.title}</strong><small>Last studied {dateLabel(topic.lastStudiedAt)}</small></div></li>)}</ul> : <p>Run the four subject diagnostics to reveal the first performance priorities.</p>}</div></div>
+     <div className="panel daily-check-history"><div className="section-heading"><div><span className="eyebrow">RECENT DAILY CHECKS</span><h2>What needs to happen next</h2></div><span className="quiet">Effort guidance—not grades</span></div><div className="daily-check-history-list">{recentDailyChecks.length ? recentDailyChecks.map((item) => <article key={item.id}><div><strong>{dailyCheckOutcome(item.note) ?? "Check completed"}</strong><small>{item.subject ?? "Study lesson"} · {dateLabel(item.createdAt)}</small></div><p>{dailyCheckSummary(item.note)}</p></article>) : <EmptyMessage>Daily-check guidance will appear here after Talha completes a lesson check.</EmptyMessage>}</div></div>
+     <div className="panel adaptive-evidence-panel"><div className="section-heading"><div><span className="eyebrow">ADAPTIVE REVIEW QUEUE</span><h2>Wrong and skipped evidence</h2></div><strong>{adaptiveEvidence.needsReview} recent attempt{adaptiveEvidence.needsReview === 1 ? "" : "s"} need review</strong></div><div className="metrics-row compact"><article><span>Wrong</span><strong>{adaptiveEvidence.wrong}</strong><small>attempted but incorrect</small></article><article><span>Skipped</span><strong>{adaptiveEvidence.skipped}</strong><small>not attempted</small></article><article><span>Question selection</span><strong>Adaptive</strong><small>weak → unseen → seen</small></article><article><span>Next action</span><strong>{adaptiveEvidence.wrong || adaptiveEvidence.skipped ? "Re-test" : "Continue"}</strong><small>based on saved evidence</small></article></div><p className="panel-note">{adaptiveMessage}</p></div>
+-    <div className="panel subject-table"><div className="section-heading"><div><span className="eyebrow">LEARNING SUPPORT TRACKER</span><h2>Progress, effort and next focus</h2></div><div className="backup-actions"><span className="quiet">Syllabus target: {fullDateLabel(settings.targetDate)}</span><a href="/api/backup">Download progress backup</a></div></div><div className="table-head"><span>Subject</span><span>Workload covered</span><span>Secure</span><span>Effort needed</span><span>Present need / next focus</span></div>{subjectStats.map((item) => { const topicMinutes = TOPICS.filter((topic) => topic.subject === item.subject).reduce((sum, topic) => sum + topic.minutes, 0); const coveredMinutes = TOPICS.filter((topic) => topic.subject === item.subject && (progressMap.get(topic.id)?.stage ?? 0) >= 1).reduce((sum, topic) => sum + topic.minutes, 0); const guidance = item.average ? effortGuidance(item.average, item.topError) : null; return <div className="table-row" key={item.subject}><strong><i style={{ background: SUBJECT_META[item.subject].color }} />{item.subject}</strong><span>{Math.round((coveredMinutes / topicMinutes) * 100)}% <small>weighted by time</small></span><span>{Math.round((item.mastered / item.total) * 100)}% <small>{item.mastered}/{item.total}</small></span><span>{guidance?.effort ?? "Starting check"}</span><span><b className={`track-pill ${item.track === "Secure progress" ? "good" : item.track === "Focused support" ? "low" : "mid"}`}>{item.track}</b><small>{item.topError}</small></span></div>; })}</div>
++    <div className="panel subject-table"><div className="section-heading"><div><span className="eyebrow">LEARNING SUPPORT TRACKER</span><h2>Progress, effort and next focus</h2></div><div className="backup-actions"><span className="quiet">Syllabus target: {fullDateLabel(settings.targetDate)}</span><button type="button" onClick={() => void downloadReport()} disabled={reportBusy}>{reportBusy ? "Preparing PDF..." : "Download progress report (PDF)"}</button><a className="secondary-link" href="/api/backup" title="Full data copy for restoring the LMS; not meant for reading">Data backup (JSON)</a></div></div>{reportError ? <p className="form-error" role="alert">{reportError}</p> : null}<div className="table-head"><span>Subject</span><span>Workload covered <InfoTip label="workload covered">{PARENT_GLOSSARY.workload}</InfoTip></span><span>Secure <InfoTip label="secure">{PARENT_GLOSSARY.secure}</InfoTip></span><span>Effort needed <InfoTip label="effort needed">{PARENT_GLOSSARY.effort}</InfoTip></span><span>Present need / next focus <InfoTip label="present need">{PARENT_GLOSSARY.track}</InfoTip></span></div>{subjectStats.map((item) => <div className="table-row" key={item.subject}><strong><button type="button" className="subject-link" onClick={() => setOpenSubject(item.subject)} aria-label={`${item.subject}: show covered and remaining topics`}><i style={{ background: SUBJECT_META[item.subject].color }} />{item.subject}</button></strong><span>{item.workload.coveredPercent}% <small>weighted by time</small></span><span>{item.total ? Math.round((item.mastered / item.total) * 100) : 0}% <small>{item.mastered}/{item.total}</small></span><span>{item.effort}{item.attemptCount ? <small>avg {item.average}% · {item.attemptCount} test{item.attemptCount === 1 ? "" : "s"}</small> : null}</span><span><b className={`track-pill ${item.track === "Secure progress" ? "good" : item.track === "Focused support" ? "low" : "mid"}`}>{item.track}</b><small>{item.topError}</small></span></div>)}</div>
++    {showRecalls ? <OverdueRecallsDialog recalls={overdue} explanation={PARENT_GLOSSARY.recalls} onClose={() => setShowRecalls(false)} /> : null}
++    {openWorkload ? <SubjectWorkloadDialog workload={openWorkload} onClose={() => setOpenSubject(null)} /> : null}
+   </section>;
+ }
+diff --git a/package-lock.json b/package-lock.json
+index 7ce7ea0..fe05b76 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,14 +1,16 @@
+ {
+-  "name": "site-creator-vinext-starter",
++  "name": "talha-cie-study-system",
+   "version": "0.1.0",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+-      "name": "site-creator-vinext-starter",
++      "name": "talha-cie-study-system",
+       "version": "0.1.0",
+       "dependencies": {
+         "drizzle-orm": "0.45.2",
++        "jspdf": "4.2.1",
++        "jspdf-autotable": "5.0.8",
+         "next": "16.2.6",
+         "react": "19.2.6",
+         "react-dom": "19.2.6"
+@@ -240,6 +242,15 @@
+         "node": ">=6.0.0"
+       }
+     },
++    "node_modules/@babel/runtime": {
++      "version": "7.29.7",
++      "resolved": "https://registry.npmjs.org/@babel/runtime/-/runtime-7.29.7.tgz",
++      "integrity": "sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=6.9.0"
++      }
++    },
+     "node_modules/@babel/template": {
+       "version": "7.28.6",
+       "resolved": "https://registry.npmjs.org/@babel/template/-/template-7.28.6.tgz",
+@@ -464,6 +475,7 @@
+       "version": "1.10.0",
+       "resolved": "https://registry.npmjs.org/@emnapi/runtime/-/runtime-1.10.0.tgz",
+       "integrity": "sha512-ewvYlk86xUoGI0zQRNq/mC+16R1QeDlKQy21Ki3oSYXNgLb45GV1P6A0M+/s6nyCuNDqe5VpaY84BzXGwVbwFA==",
++      "dev": true,
+       "license": "MIT",
+       "optional": true,
+       "dependencies": {
+@@ -1586,6 +1598,7 @@
+       "cpu": [
+         "arm64"
+       ],
++      "dev": true,
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1608,6 +1621,7 @@
+       "cpu": [
+         "x64"
+       ],
++      "dev": true,
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1630,6 +1644,7 @@
+       "cpu": [
+         "arm64"
+       ],
++      "dev": true,
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1646,6 +1661,7 @@
+       "cpu": [
+         "x64"
+       ],
++      "dev": true,
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1662,9 +1678,7 @@
+       "cpu": [
+         "arm"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
++      "dev": true,
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1681,9 +1695,7 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
++      "dev": true,
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1700,9 +1712,7 @@
+       "cpu": [
+         "ppc64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
++      "dev": true,
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1719,9 +1729,7 @@
+       "cpu": [
+         "riscv64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
++      "dev": true,
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1738,9 +1746,7 @@
+       "cpu": [
+         "s390x"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
++      "dev": true,
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1757,9 +1763,7 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
++      "dev": true,
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1776,9 +1780,7 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
++      "dev": true,
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1795,9 +1797,7 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
++      "dev": true,
+       "license": "LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -1814,9 +1814,7 @@
+       "cpu": [
+         "arm"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
++      "dev": true,
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1839,9 +1837,7 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
++      "dev": true,
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1864,9 +1860,7 @@
+       "cpu": [
+         "ppc64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
++      "dev": true,
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1889,9 +1883,7 @@
+       "cpu": [
+         "riscv64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
++      "dev": true,
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1914,9 +1906,7 @@
+       "cpu": [
+         "s390x"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
++      "dev": true,
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1939,9 +1929,7 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
++      "dev": true,
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1964,9 +1952,7 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
++      "dev": true,
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -1989,9 +1975,7 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
++      "dev": true,
+       "license": "Apache-2.0",
+       "optional": true,
+       "os": [
+@@ -2014,6 +1998,7 @@
+       "cpu": [
+         "wasm32"
+       ],
++      "dev": true,
+       "license": "Apache-2.0 AND LGPL-3.0-or-later AND MIT",
+       "optional": true,
+       "dependencies": {
+@@ -2033,6 +2018,7 @@
+       "cpu": [
+         "arm64"
+       ],
++      "dev": true,
+       "license": "Apache-2.0 AND LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -2052,6 +2038,7 @@
+       "cpu": [
+         "ia32"
+       ],
++      "dev": true,
+       "license": "Apache-2.0 AND LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -2071,6 +2058,7 @@
+       "cpu": [
+         "x64"
+       ],
++      "dev": true,
+       "license": "Apache-2.0 AND LGPL-3.0-or-later",
+       "optional": true,
+       "os": [
+@@ -2213,9 +2201,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2232,9 +2217,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2251,9 +2233,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2270,9 +2249,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2517,9 +2493,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2537,9 +2510,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2557,9 +2527,6 @@
+         "ppc64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2577,9 +2544,6 @@
+         "s390x"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2597,9 +2561,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2617,9 +2578,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2911,9 +2869,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2931,9 +2886,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2951,9 +2903,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -2971,9 +2920,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3191,6 +3137,19 @@
+         "undici-types": "~6.21.0"
+       }
+     },
++    "node_modules/@types/pako": {
++      "version": "2.0.4",
++      "resolved": "https://registry.npmjs.org/@types/pako/-/pako-2.0.4.tgz",
++      "integrity": "sha512-VWDCbrLeVXJM9fihYodcLiIv0ku+AlOa/TQ1SvYOaBuyrSKgEcro95LJyIsJ4vSo6BXIxOKxiJAat04CmST9Fw==",
++      "license": "MIT"
++    },
++    "node_modules/@types/raf": {
++      "version": "3.4.3",
++      "resolved": "https://registry.npmjs.org/@types/raf/-/raf-3.4.3.tgz",
++      "integrity": "sha512-c4YAvMedbPZ5tEyxzQdMoOhhJ4RD3rngZIdwC2/qDN3d7JpEhB6fiBRKVY1lg5B7Wk+uPBjn5f39j1/2MY1oOw==",
++      "license": "MIT",
++      "optional": true
++    },
+     "node_modules/@types/react": {
+       "version": "19.2.14",
+       "resolved": "https://registry.npmjs.org/@types/react/-/react-19.2.14.tgz",
+@@ -3211,6 +3170,13 @@
+         "@types/react": "^19.2.0"
+       }
+     },
++    "node_modules/@types/trusted-types": {
++      "version": "2.0.7",
++      "resolved": "https://registry.npmjs.org/@types/trusted-types/-/trusted-types-2.0.7.tgz",
++      "integrity": "sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==",
++      "license": "MIT",
++      "optional": true
++    },
+     "node_modules/@typescript-eslint/eslint-plugin": {
+       "version": "8.59.3",
+       "resolved": "https://registry.npmjs.org/@typescript-eslint/eslint-plugin/-/eslint-plugin-8.59.3.tgz",
+@@ -3642,9 +3608,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3659,9 +3622,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3676,9 +3636,6 @@
+         "ppc64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3693,9 +3650,6 @@
+         "riscv64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3710,9 +3664,6 @@
+         "riscv64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3727,9 +3678,6 @@
+         "s390x"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3744,9 +3692,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3761,9 +3706,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -4461,6 +4403,16 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/base64-arraybuffer": {
++      "version": "1.0.2",
++      "resolved": "https://registry.npmjs.org/base64-arraybuffer/-/base64-arraybuffer-1.0.2.tgz",
++      "integrity": "sha512-I3yl4r9QB5ZRY3XuJVEPfc2XhZO6YweFPI+UovAzn+8/hb3oJ6lnysaFcjVpkCPfVWFUDvoZ8kmVDP7WyRtYtQ==",
++      "license": "MIT",
++      "optional": true,
++      "engines": {
++        "node": ">= 0.6.0"
++      }
++    },
+     "node_modules/base64-js": {
+       "version": "0.0.8",
+       "resolved": "https://registry.npmjs.org/base64-js/-/base64-js-0.0.8.tgz",
+@@ -4645,6 +4597,26 @@
+       ],
+       "license": "CC-BY-4.0"
+     },
++    "node_modules/canvg": {
++      "version": "3.0.11",
++      "resolved": "https://registry.npmjs.org/canvg/-/canvg-3.0.11.tgz",
++      "integrity": "sha512-5ON+q7jCTgMp9cjpu4Jo6XbvfYwSB2Ow3kzHKfIyJfaCAOHLbdKPQqGKgfED/R5B+3TFFfe8pegYA+b423SRyA==",
++      "license": "MIT",
++      "optional": true,
++      "dependencies": {
++        "@babel/runtime": "^7.12.5",
++        "@types/raf": "^3.4.0",
++        "core-js": "^3.8.3",
++        "raf": "^3.4.1",
++        "regenerator-runtime": "^0.13.7",
++        "rgbcolor": "^1.0.1",
++        "stackblur-canvas": "^2.0.0",
++        "svg-pathdata": "^6.0.3"
++      },
++      "engines": {
++        "node": ">=10.0.0"
++      }
++    },
+     "node_modules/chalk": {
+       "version": "4.1.2",
+       "resolved": "https://registry.npmjs.org/chalk/-/chalk-4.1.2.tgz",
+@@ -4735,6 +4707,21 @@
+         "url": "https://opencollective.com/express"
+       }
+     },
++    "node_modules/core-js": {
++      "version": "3.50.0",
++      "resolved": "https://registry.npmjs.org/core-js/-/core-js-3.50.0.tgz",
++      "integrity": "sha512-BRWgOLKkFeCgRudR6zrs8p9XJZcE14grzKMMssoYrk6krtuEZ7MTKPIY5RzOnqsEKIR9kst7wNzphttraT+Yqw==",
++      "hasInstallScript": true,
++      "license": "MIT",
++      "optional": true,
++      "engines": {
++        "node": "*"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/core-js"
++      }
++    },
+     "node_modules/cross-spawn": {
+       "version": "7.0.6",
+       "resolved": "https://registry.npmjs.org/cross-spawn/-/cross-spawn-7.0.6.tgz",
+@@ -4784,6 +4771,16 @@
+         "node": ">=16"
+       }
+     },
++    "node_modules/css-line-break": {
++      "version": "2.1.0",
++      "resolved": "https://registry.npmjs.org/css-line-break/-/css-line-break-2.1.0.tgz",
++      "integrity": "sha512-FHcKFCZcAha3LwfVBhCQbW2nCNbkZXn7KVUJcsT5/P8YmfsVja0FMPJr0B903j/E69HUphKiV9iQArX8SDYA4w==",
++      "license": "MIT",
++      "optional": true,
++      "dependencies": {
++        "utrie": "^1.0.2"
++      }
++    },
+     "node_modules/css-to-react-native": {
+       "version": "3.2.0",
+       "resolved": "https://registry.npmjs.org/css-to-react-native/-/css-to-react-native-3.2.0.tgz",
+@@ -4948,6 +4945,16 @@
+         "node": ">=0.10.0"
+       }
+     },
++    "node_modules/dompurify": {
++      "version": "3.4.16",
++      "resolved": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.16.tgz",
++      "integrity": "sha512-sqo+pNp3qRhCIpbgRi1y8Tgk27Bo2Ry7w0dC1NBeNTdZChWjz9Xb/KOoZbRP/R6pQZ80Qw8YhXw13hWWBbMRnQ==",
++      "license": "(MPL-2.0 OR Apache-2.0)",
++      "optional": true,
++      "optionalDependencies": {
++        "@types/trusted-types": "^2.0.7"
++      }
++    },
+     "node_modules/drizzle-kit": {
+       "version": "0.31.10",
+       "resolved": "https://registry.npmjs.org/drizzle-kit/-/drizzle-kit-0.31.10.tgz",
+@@ -6370,6 +6377,33 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/fast-png": {
++      "version": "6.4.0",
++      "resolved": "https://registry.npmjs.org/fast-png/-/fast-png-6.4.0.tgz",
++      "integrity": "sha512-kAqZq1TlgBjZcLr5mcN6NP5Rv4V2f22z00c3g8vRrwkcqjerx7BEhPbOnWCPqaHUl2XWQBJQvOT/FQhdMT7X/Q==",
++      "license": "MIT",
++      "dependencies": {
++        "@types/pako": "^2.0.3",
++        "iobuffer": "^5.3.2",
++        "pako": "^2.1.0"
++      }
++    },
++    "node_modules/fast-png/node_modules/pako": {
++      "version": "2.2.0",
++      "resolved": "https://registry.npmjs.org/pako/-/pako-2.2.0.tgz",
++      "integrity": "sha512-zJq6RP/5q+TO2OpFV3FHzlPnFjmkb7Nc99a5SNjJE+uu/PkpChs+NIZSSzbBoD+6kjiISXjfYdwj1ZRQ81dz/w==",
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/puzrin"
++        },
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/nodeca"
++        }
++      ],
++      "license": "(MIT AND Zlib)"
++    },
+     "node_modules/fast-uri": {
+       "version": "3.1.2",
+       "resolved": "https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.2.tgz",
+@@ -6833,6 +6867,20 @@
+         "url": "https://github.com/sponsors/sindresorhus"
+       }
+     },
++    "node_modules/html2canvas": {
++      "version": "1.4.1",
++      "resolved": "https://registry.npmjs.org/html2canvas/-/html2canvas-1.4.1.tgz",
++      "integrity": "sha512-fPU6BHNpsyIhr8yyMpTLLxAbkaK8ArIBcmZIRiBLiDhjeqvXolaEmDGmELFuX9I4xDcaKKcJl+TKZLqruBbmWA==",
++      "license": "MIT",
++      "optional": true,
++      "dependencies": {
++        "css-line-break": "^2.1.0",
++        "text-segmentation": "^1.0.3"
++      },
++      "engines": {
++        "node": ">=8.0.0"
++      }
++    },
+     "node_modules/ignore": {
+       "version": "5.3.2",
+       "resolved": "https://registry.npmjs.org/ignore/-/ignore-5.3.2.tgz",
+@@ -6898,6 +6946,12 @@
+         "node": ">= 0.4"
+       }
+     },
++    "node_modules/iobuffer": {
++      "version": "5.4.0",
++      "resolved": "https://registry.npmjs.org/iobuffer/-/iobuffer-5.4.0.tgz",
++      "integrity": "sha512-DRebOWuqDvxunfkNJAlc3IzWIPD5xVxwUNbHr7xKB8E6aLJxIPfNX3CoMJghcFjpv6RWQsrcJbghtEwSPoJqMA==",
++      "license": "MIT"
++    },
+     "node_modules/ipaddr.js": {
+       "version": "2.4.0",
+       "resolved": "https://registry.npmjs.org/ipaddr.js/-/ipaddr.js-2.4.0.tgz",
+@@ -7465,6 +7519,38 @@
+         "node": ">=6"
+       }
+     },
++    "node_modules/jspdf": {
++      "version": "4.2.1",
++      "resolved": "https://registry.npmjs.org/jspdf/-/jspdf-4.2.1.tgz",
++      "integrity": "sha512-YyAXyvnmjTbR4bHQRLzex3CuINCDlQnBqoSYyjJwTP2x9jDLuKDzy7aKUl0hgx3uhcl7xzg32agn5vlie6HIlQ==",
++      "license": "MIT",
++      "dependencies": {
++        "@babel/runtime": "^7.28.6",
++        "fast-png": "^6.2.0",
++        "fflate": "^0.8.1"
++      },
++      "optionalDependencies": {
++        "canvg": "^3.0.11",
++        "core-js": "^3.6.0",
++        "dompurify": "^3.3.1",
++        "html2canvas": "^1.0.0-rc.5"
++      }
++    },
++    "node_modules/jspdf-autotable": {
++      "version": "5.0.8",
++      "resolved": "https://registry.npmjs.org/jspdf-autotable/-/jspdf-autotable-5.0.8.tgz",
++      "integrity": "sha512-Hy05N86yBO7CXBrnSLOge7i1ZYpKH2DjQ94iybaP7vBhSInjvRBgDc99ngKzSbSO8Jc98ZCally8I6n0tj2RJQ==",
++      "license": "MIT",
++      "peerDependencies": {
++        "jspdf": "^2 || ^3 || ^4"
++      }
++    },
++    "node_modules/jspdf/node_modules/fflate": {
++      "version": "0.8.3",
++      "resolved": "https://registry.npmjs.org/fflate/-/fflate-0.8.3.tgz",
++      "integrity": "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==",
++      "license": "MIT"
++    },
+     "node_modules/jsx-ast-utils": {
+       "version": "3.3.5",
+       "resolved": "https://registry.npmjs.org/jsx-ast-utils/-/jsx-ast-utils-3.3.5.tgz",
+@@ -7678,9 +7764,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -7702,9 +7785,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -7726,9 +7806,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -7750,9 +7827,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -8412,6 +8486,13 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/performance-now": {
++      "version": "2.1.0",
++      "resolved": "https://registry.npmjs.org/performance-now/-/performance-now-2.1.0.tgz",
++      "integrity": "sha512-7EAHlyLHI56VEIdK57uwHdHKIaAGbnXPiw0yWbarQZOKaKpvUIgW0jWRVLiatnM+XXlSwsanIBH/hzGMJulMow==",
++      "license": "MIT",
++      "optional": true
++    },
+     "node_modules/picocolors": {
+       "version": "1.1.1",
+       "resolved": "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz",
+@@ -8530,6 +8611,16 @@
+       ],
+       "license": "MIT"
+     },
++    "node_modules/raf": {
++      "version": "3.4.1",
++      "resolved": "https://registry.npmjs.org/raf/-/raf-3.4.1.tgz",
++      "integrity": "sha512-Sq4CW4QhwOHE8ucn6J34MqtZCeWFP2aQSmrlroYgqAV1PjStIhJXxYuTgUIfkEk7zTLjmIjLmU5q+fbD1NnOJA==",
++      "license": "MIT",
++      "optional": true,
++      "dependencies": {
++        "performance-now": "^2.1.0"
++      }
++    },
+     "node_modules/react": {
+       "version": "19.2.6",
+       "resolved": "https://registry.npmjs.org/react/-/react-19.2.6.tgz",
+@@ -8601,6 +8692,13 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/regenerator-runtime": {
++      "version": "0.13.11",
++      "resolved": "https://registry.npmjs.org/regenerator-runtime/-/regenerator-runtime-0.13.11.tgz",
++      "integrity": "sha512-kY1AZVr2Ra+t+piVaJ4gxaFaReZVH40AKNo7UCX6W+dEwBo/2oZJzqfuN1qLq1oL45o56cPaTXELwrTh8Fpggg==",
++      "license": "MIT",
++      "optional": true
++    },
+     "node_modules/regexp.prototype.flags": {
+       "version": "1.5.4",
+       "resolved": "https://registry.npmjs.org/regexp.prototype.flags/-/regexp.prototype.flags-1.5.4.tgz",
+@@ -8688,6 +8786,16 @@
+         "node": ">=0.10.0"
+       }
+     },
++    "node_modules/rgbcolor": {
++      "version": "1.0.1",
++      "resolved": "https://registry.npmjs.org/rgbcolor/-/rgbcolor-1.0.1.tgz",
++      "integrity": "sha512-9aZLIrhRaD97sgVhtJOW6ckOEh6/GnvQtdVNfdZ6s67+3/XwLS9lBcQYzEEhYVeUowN7pRzMLsyGhK2i/xvWbw==",
++      "license": "MIT OR SEE LICENSE IN FEEL-FREE.md",
++      "optional": true,
++      "engines": {
++        "node": ">= 0.8.15"
++      }
++    },
+     "node_modules/rolldown": {
+       "version": "1.0.1",
+       "resolved": "https://registry.npmjs.org/rolldown/-/rolldown-1.0.1.tgz",
+@@ -9157,6 +9265,16 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/stackblur-canvas": {
++      "version": "2.7.0",
++      "resolved": "https://registry.npmjs.org/stackblur-canvas/-/stackblur-canvas-2.7.0.tgz",
++      "integrity": "sha512-yf7OENo23AGJhBriGx0QivY5JP6Y1HbrrDI6WLt6C5auYZXlQrheoY8hD4ibekFKz1HOfE48Ww8kMWMnJD/zcQ==",
++      "license": "MIT",
++      "optional": true,
++      "engines": {
++        "node": ">=0.1.14"
++      }
++    },
+     "node_modules/stop-iteration-iterator": {
+       "version": "1.1.0",
+       "resolved": "https://registry.npmjs.org/stop-iteration-iterator/-/stop-iteration-iterator-1.1.0.tgz",
+@@ -9383,6 +9501,16 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/svg-pathdata": {
++      "version": "6.0.3",
++      "resolved": "https://registry.npmjs.org/svg-pathdata/-/svg-pathdata-6.0.3.tgz",
++      "integrity": "sha512-qsjeeq5YjBZ5eMdFuUa4ZosMLxgr5RZ+F+Y1OrDhuOCEInRMA3x74XdBtggJcj9kOeInz0WE+LgCPDkZFlBYJw==",
++      "license": "MIT",
++      "optional": true,
++      "engines": {
++        "node": ">=12.0.0"
++      }
++    },
+     "node_modules/tailwindcss": {
+       "version": "4.2.1",
+       "resolved": "https://registry.npmjs.org/tailwindcss/-/tailwindcss-4.2.1.tgz",
+@@ -9486,6 +9614,16 @@
+         }
+       }
+     },
++    "node_modules/text-segmentation": {
++      "version": "1.0.3",
++      "resolved": "https://registry.npmjs.org/text-segmentation/-/text-segmentation-1.0.3.tgz",
++      "integrity": "sha512-iOiPUo/BGnZ6+54OsWxZidGCsdU8YbE4PSpdPinp7DeMtUJNJBoJ/ouUSTJjHkh1KntHaltHl/gDs2FC4i5+Nw==",
++      "license": "MIT",
++      "optional": true,
++      "dependencies": {
++        "utrie": "^1.0.2"
++      }
++    },
+     "node_modules/tiny-inflate": {
+       "version": "1.0.3",
+       "resolved": "https://registry.npmjs.org/tiny-inflate/-/tiny-inflate-1.0.3.tgz",
+@@ -9915,6 +10053,16 @@
+         "punycode": "^2.1.0"
+       }
+     },
++    "node_modules/utrie": {
++      "version": "1.0.2",
++      "resolved": "https://registry.npmjs.org/utrie/-/utrie-1.0.2.tgz",
++      "integrity": "sha512-1MLa5ouZiOmQzUbjbu9VmjLzn1QLXBhwpUa7kdLUQK+KQ5KA9I1vk5U4YHe/X2Ch7PYnJfWuWT+VbuxbGwljhw==",
++      "license": "MIT",
++      "optional": true,
++      "dependencies": {
++        "base64-arraybuffer": "^1.0.2"
++      }
++    },
+     "node_modules/vinext": {
+       "version": "0.0.50",
+       "resolved": "https://registry.npmjs.org/vinext/-/vinext-0.0.50.tgz",
+@@ -10256,9 +10404,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -10280,9 +10425,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -10304,9 +10446,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -10328,9 +10467,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+diff --git a/package.json b/package.json
+index 9d176ee..3e72efe 100644
+--- a/package.json
++++ b/package.json
+@@ -19,6 +19,8 @@
+   },
+   "dependencies": {
+     "drizzle-orm": "0.45.2",
++    "jspdf": "4.2.1",
++    "jspdf-autotable": "5.0.8",
+     "next": "16.2.6",
+     "react": "19.2.6",
+     "react-dom": "19.2.6"
+-- 
+2.43.0
+
