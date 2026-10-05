@@ -38,6 +38,8 @@ import { buildAdaptivePlanner, readManifest, taskTime } from "./adaptive-plan";
 import WeeklyReview from "./weekly-review";
 import TargetPlanner from "./target-planner";
 import type { PlannedTask } from "./adaptive-plan";
+import { InfoTip, OverdueRecallsDialog, SubjectWorkloadDialog } from "./parent-insights";
+import { PARENT_GLOSSARY, lastDays, recallWaitDays, studyMinutesByDay, type OverdueRecall, type SubjectWorkload } from "./parent-report";
 
 type View = "today" | "calendar" | "syllabus" | "dates" | "quizzes" | "tests" | "plan" | "parent" | "help";
 type CalendarTaskFilter = "all" | "original" | "rescheduled" | "catchup";
@@ -485,10 +487,8 @@ export default function StudyDashboard({
   const [selectedDate, setSelectedDate] = useState(localDateKey());
   const [calendarMonth, setCalendarMonth] = useState(() => localDateKey().slice(0, 7));
   const [calendarTaskFilter, setCalendarTaskFilter] = useState<CalendarTaskFilter>("all");
-  type RangeTaskFilter = "assigned" | "pending" | "completed" | "originalCompleted" | "catchup" | "rescheduled";
-  const [rangeFromDate, setRangeFromDate] = useState(() => moveDate(localDateKey(), -4));
+  const [rangeFromDate, setRangeFromDate] = useState(localDateKey());
   const [rangeToDate, setRangeToDate] = useState(localDateKey());
-  const [rangeTaskFilter, setRangeTaskFilter] = useState<RangeTaskFilter>("assigned");
 
   const loadFamilyState = useCallback(async (showError = false) => {
     try {
@@ -569,6 +569,10 @@ export default function StudyDashboard({
   const progressStageFor = useCallback(
     (topic: Topic) => Math.max(progressMap.get(topic.id)?.stage ?? 0, archivedCompletedTopicIds.has(topic.id) ? 1 : 0),
     [archivedCompletedTopicIds, progressMap],
+  );
+  const completedOnFor = useCallback(
+    (topic: Topic) => progressMap.get(topic.id)?.lastStudiedAt ?? (archivedCompletedTopicIds.has(topic.id) ? familyState.archivedCompletions[topic.id] ?? null : null),
+    [archivedCompletedTopicIds, familyState.archivedCompletions, progressMap],
   );
 
   const stats = useMemo<Stats>(() => {
@@ -699,41 +703,50 @@ export default function StudyDashboard({
       : calendarTaskFilter === "rescheduled"
         ? selectedRescheduledTasks
         : selectedCatchUpTasks;
-  const rangeAnalytics = useMemo(() => {
-    const from = rangeFromDate <= rangeToDate ? rangeFromDate : rangeToDate;
-    const to = rangeFromDate <= rangeToDate ? rangeToDate : rangeFromDate;
-    const inRange = (date: string) => date >= from && date <= to;
-    const assigned: PlannerTask[] = [];
-    planner.canonical.forEach((tasks, date) => {
-      if (inRange(date)) assigned.push(...tasks);
-    });
-    const completedInRange = [...planner.tasksById.values()].filter((task) => {
-      const completedDate = settings[`planner.done.${task.id}`];
-      return Boolean(completedDate && inRange(completedDate));
-    });
-    const completedFromAssigned = completedInRange.filter((task) => {
-      const completedDate = settings[`planner.done.${task.id}`];
-      return inRange(task.originalDate) && completedDate === task.originalDate;
-    });
-    const catchUp = completedInRange.filter((task) => {
-      const completedDate = settings[`planner.done.${task.id}`];
-      return Boolean(completedDate && completedDate !== task.originalDate);
-    });
-    const pending = assigned.filter((task) => !settings[`planner.done.${task.id}`]);
-    const rescheduled = pending.filter((task) => {
-      const movedTo = effectiveDateByTaskId.get(task.id);
-      return Boolean(movedTo && movedTo !== task.originalDate);
-    });
-    const filters: Record<RangeTaskFilter, PlannerTask[]> = {
-      assigned,
-      pending,
-      completed: completedInRange,
-      originalCompleted: completedFromAssigned,
-      catchup: catchUp,
-      rescheduled,
-    };
-    return { from, to, assigned, pending, completedInRange, completedFromAssigned, catchUp, rescheduled, visible: filters[rangeTaskFilter] };
-  }, [effectiveDateByTaskId, planner.canonical, planner.tasksById, rangeFromDate, rangeTaskFilter, rangeToDate, settings]);
+  const rangeBounds = useMemo(() => ({
+    from: rangeFromDate <= rangeToDate ? rangeFromDate : rangeToDate,
+    to: rangeFromDate <= rangeToDate ? rangeToDate : rangeFromDate,
+  }), [rangeFromDate, rangeToDate]);
+  const rangePlannerTasks = useMemo(() => {
+    const tasks: PlannerTask[] = [];
+    let date = rangeBounds.from;
+    while (date <= rangeBounds.to) {
+      tasks.push(...(date < todayKey ? (planner.canonical.get(date) ?? []) : (planner.effective.get(date) ?? [])));
+      date = moveDate(date, 1);
+    }
+    return tasks;
+  }, [planner.canonical, planner.effective, rangeBounds.from, rangeBounds.to, todayKey]);
+  const rangeIsSingleSelectedDay = rangeBounds.from === rangeBounds.to && rangeBounds.from === selectedDate;
+  const rangeIsToday = rangeBounds.from === todayKey && rangeBounds.to === todayKey;
+  const rangeQuizResults = useMemo(() => familyState.quizAttempts
+    .filter((attempt) => {
+      const date = attempt.createdAt.slice(0, 10);
+      return date >= rangeBounds.from && date <= rangeBounds.to;
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [familyState.quizAttempts, rangeBounds.from, rangeBounds.to]);
+  const rangeTopicQuizResults = rangeQuizResults.filter((attempt) => !attempt.sessionId.startsWith("v3:weekly:"));
+  const rangeWeeklyResults = rangeQuizResults.filter((attempt) => attempt.sessionId.startsWith("v3:weekly:"));
+  const rangeTestResults = useMemo(() => familyState.attempts
+    .filter((attempt) => {
+      const date = attempt.createdAt.slice(0, 10);
+      return date >= rangeBounds.from && date <= rangeBounds.to;
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [familyState.attempts, rangeBounds.from, rangeBounds.to]);
+  const rangeOriginalTasks = rangeIsToday ? selectedOriginalTasks : rangePlannerTasks.filter((task) => task.originalDate >= rangeBounds.from && task.originalDate <= rangeBounds.to && !task.carriedForward);
+  const rangeRescheduledTasks = rangeIsToday ? selectedRescheduledTasks : rangePlannerTasks.filter((task) => task.carriedForward && task.originalDate >= rangeBounds.from && task.originalDate <= rangeBounds.to && task.scheduledDate !== task.originalDate);
+  const rangeCatchupTasks = rangeIsToday ? selectedCatchUpTasks : rangePlannerTasks.filter((task) => task.carriedForward && task.originalDate < task.scheduledDate);
+  const rangeCurrentTasks = rangeIsToday ? selectedPlannerTasks : rangePlannerTasks;
+  const rangeFilteredTasks = calendarTaskFilter === "original" ? rangeOriginalTasks : calendarTaskFilter === "rescheduled" ? rangeRescheduledTasks : calendarTaskFilter === "catchup" ? rangeCatchupTasks : rangeCurrentTasks;
+  const calendarDisplayTasks = rangeIsSingleSelectedDay && rangeIsToday ? filteredCalendarTasks : rangeFilteredTasks;
+  // Picking a new calendar day resets the working-list range to that day (adjusted during render, not in an effect).
+  const [rangeAnchorDate, setRangeAnchorDate] = useState(selectedDate);
+  if (rangeAnchorDate !== selectedDate) {
+    setRangeAnchorDate(selectedDate);
+    setRangeFromDate(selectedDate);
+    setRangeToDate(selectedDate);
+  }
+
+
   function selectCalendarTaskFilter(filter: CalendarTaskFilter) {
     setCalendarTaskFilter(filter);
   }
@@ -1230,8 +1243,25 @@ export default function StudyDashboard({
                 })}</div>
               </div>
               <div className="date-tasks panel">
-                <div className="section-heading"><div><span className="eyebrow">{selectedDate === todayKey ? "TODAY'S WORKING LIST" : "ASSIGNED TASKS"}</span><h2>{fullDateLabel(selectedDate)}</h2></div><strong>{selectedPlannerTasks.length} current task{selectedPlannerTasks.length === 1 ? "" : "s"} · {selectedPlannerTasks.reduce((sum, task) => sum + plannedTaskMinutes(task), 0)} min</strong></div>
-                {selectedDate === todayKey && (
+                <div className="section-heading">
+                  <div>
+                    <span className="eyebrow">{rangeIsToday ? "TODAY'S WORKING LIST" : rangeBounds.from === rangeBounds.to ? "SELECTED DAY'S WORKING LIST" : "SELECTED DAYS' WORKING LIST"}</span>
+                    <h2>From {fullDateLabel(rangeBounds.from)} to {fullDateLabel(rangeBounds.to)}</h2>
+                  </div>
+                  <strong>{calendarDisplayTasks.length} current task{calendarDisplayTasks.length === 1 ? "" : "s"} · {calendarDisplayTasks.reduce((sum, task) => sum + plannedTaskMinutes(task), 0)} min</strong>
+                </div>
+                <div className="calendar-task-filters" role="group" aria-label="Filter calendar working list">
+                  <span>Show:</span>
+                  <button type="button" className={calendarTaskFilter === "all" ? "active" : ""} onClick={() => selectCalendarTaskFilter("all")}>All current ({rangeCurrentTasks.length})</button>
+                  <button type="button" className={calendarTaskFilter === "original" ? "active" : ""} onClick={() => selectCalendarTaskFilter("original")}>Original plan ({rangeOriginalTasks.length})</button>
+                  <button type="button" className={calendarTaskFilter === "rescheduled" ? "active" : ""} onClick={() => selectCalendarTaskFilter("rescheduled")}>Rescheduled ({rangeRescheduledTasks.length})</button>
+                  <button type="button" className={calendarTaskFilter === "catchup" ? "active" : ""} onClick={() => selectCalendarTaskFilter("catchup")}>Catch-up ({rangeCatchupTasks.length})</button>
+                </div>
+                <div className="range-date-controls calendar-range-controls">
+                  <label>From date<input type="date" value={rangeFromDate} onChange={(event) => setRangeFromDate(event.target.value)} /></label>
+                  <label>To date<input type="date" value={rangeToDate} onChange={(event) => setRangeToDate(event.target.value)} /></label>
+                </div>
+                {rangeIsToday && (
                   <>
                     <div className="calendar-day-ledger" aria-label="Today task ledger">
                       <button type="button" className="calendar-ledger-card" onClick={() => selectCalendarTaskFilter("original")} aria-pressed={calendarTaskFilter === "original"}>
@@ -1251,60 +1281,38 @@ export default function StudyDashboard({
                       </button>
                       <p><b>How the count works:</b> catch-up completed today = total completed today − tasks completed from today&apos;s original plan. Click a card to filter the task list below. Earlier dates retain their original history.</p>
                     </div>
-                    <div className="calendar-task-filters" role="group" aria-label="Filter today&apos;s calendar tasks">
-                      <span>Show:</span>
-                      <button type="button" className={calendarTaskFilter === "all" ? "active" : ""} onClick={() => selectCalendarTaskFilter("all")}>All current ({selectedPlannerTasks.length})</button>
-                      <button type="button" className={calendarTaskFilter === "original" ? "active" : ""} onClick={() => selectCalendarTaskFilter("original")}>Original plan ({selectedOriginalTasks.length})</button>
-                      <button type="button" className={calendarTaskFilter === "rescheduled" ? "active" : ""} onClick={() => selectCalendarTaskFilter("rescheduled")}>Rescheduled ({selectedRescheduledTasks.length})</button>
-                      <button type="button" className={calendarTaskFilter === "catchup" ? "active" : ""} onClick={() => selectCalendarTaskFilter("catchup")}>Catch-up ({selectedCatchUpTasks.length})</button>
-                    </div>
                   </>
                 )}
+                <div className="calendar-results-summary">
+                  <div className="section-heading"><div><span className="eyebrow">ASSESSMENT RESULTS</span><h3>Quiz results &amp; weekly test results</h3></div><strong>{rangeQuizResults.length + rangeTestResults.length} result{rangeQuizResults.length + rangeTestResults.length === 1 ? "" : "s"}</strong></div>
+                  <div className="calendar-results-grid">
+                    <article><strong>Quiz results</strong>{rangeTopicQuizResults.length ? rangeTopicQuizResults.slice(0, 3).map((result) => <div key={result.id}><span>{result.subject} · {dateLabel(result.createdAt)}</span><b>{result.score}/{result.maxScore} · {Math.round(result.score / Math.max(1, result.maxScore) * 100)}%</b></div>) : <small>No topic quiz result in this date range.</small>}</article>
+                    <article><strong>Weekly test results</strong>{rangeWeeklyResults.length ? rangeWeeklyResults.slice(0, 3).map((result) => <div key={result.id}><span>{result.subject} · {dateLabel(result.createdAt)}</span><b>{result.score}/{result.maxScore} · {Math.round(result.score / Math.max(1, result.maxScore) * 100)}%</b></div>) : <small>No weekly test result in this date range.</small>}</article>
+                    <article><strong>Recorded test results</strong>{rangeTestResults.length ? rangeTestResults.slice(0, 3).map((result) => <div key={result.id}><span>{result.subject} · {result.assessmentType} · {dateLabel(result.createdAt)}</span><b>{result.score}/{result.maxScore} · {Math.round(result.score / Math.max(1, result.maxScore) * 100)}%</b></div>) : <small>No recorded test result in this date range.</small>}</article>
+                  </div>
+                </div>
                 {STUDY_STREAMS.map((stream) => {
-                  const subjectTasks = filteredCalendarTasks.filter((task) => task.stream === stream.name);
+                  const subjectTasks = calendarDisplayTasks.filter((task) => task.stream === stream.name);
                   if (!subjectTasks.length) return null;
                   return <div className="subject-task-group" key={stream.name}><h3><i style={{ background: stream.color }} />{subjectTasks.every(task => task.kind === "revision") ? "Weekly assessment · all studied subjects" : stream.name}<span>{subjectTasks.reduce((sum, task) => sum + plannedTaskMinutes(task), 0)} min</span></h3>{subjectTasks.map((task) => { const checked = planner.completedTaskIds.has(task.id); const checkOutcome = dailyCheckOutcomeByTask.get(task.id); return <label className={`planner-task ${checked ? "done" : ""}`} key={task.id}><input type="checkbox" checked={checked} disabled={saving} onChange={(event) => void togglePlannerTask(task, event.target.checked)} /><span><strong>{task.lesson.title}</strong><small>Syllabus: {task.topic.code} · {task.topic.title}</small><small>{task.kind === "revision" ? "Weekend assessment" : task.kind === "past-paper" ? (task.topic.code === "PAST PAPER" ? "Past-paper marathon" : "Topical exam practice") : `${task.topic.code} · daily lesson`} · {task.minutes} min{task.kind === "syllabus" && task.quizMinutes !== 0 ? " + 20 min check allowance" : ""}{task.carriedForward ? ` · moved from ${fullDateLabel(task.originalDate)}` : ""}</small><small className="daily-check-status"><b>{calendarTaskStatus(task)}</b></small><small><b>Goal:</b> {task.lesson.objective}</small><small><b>Method:</b> {task.lesson.studyMethod}</small><small><b>Practice:</b> {task.lesson.practice}</small><small><b>Recall:</b> {task.lesson.recall}</small>{checkOutcome && <small className="daily-check-status">Latest check: <b>{checkOutcome}</b></small>}</span><span className="planner-task-actions">{!checked && task.kind === "syllabus" && <select aria-label={`Progress on ${task.lesson.title}`} value={settings[`planner.taskPartial.${task.id}`] || "0"} disabled={saving} onChange={(event) => void saveSetting(`planner.taskPartial.${task.id}`, event.target.value)}><option value="0">Not started</option><option value="25">25% done</option><option value="50">50% done</option><option value="75">75% done</option></select>}{checked && task.kind === "syllabus" && <button type="button" disabled={saving} onClick={() => void addNextToday(task.stream)}>Add next lesson today</button>}{task.kind === "syllabus" && <button type="button" className="daily-check-button" onClick={() => setDailyQuizTaskId(task.id)}>{checkOutcome ? "Retake check" : "Daily check"}</button>}<button type="button" onClick={() => window.open(topicPracticeUrl(task.topic), "_blank", "noopener,noreferrer")}>Optional practice search ↗</button><button type="button" onClick={() => { revealTopic(task.topic); setView(task.kind !== "syllabus" ? "tests" : "syllabus"); }}>{task.kind === "past-paper" ? "Record" : "Open"}</button></span></label>; })}</div>;
                 })}
-                {!filteredCalendarTasks.length && <EmptyMessage>{
-                  selectedDate === todayKey && calendarTaskFilter === "original"
-                    ? "No task belongs to today's original plan."
-                    : selectedDate === todayKey && calendarTaskFilter === "rescheduled"
-                      ? "No task from today's original plan has been rescheduled."
-                      : selectedDate === todayKey && calendarTaskFilter === "catchup"
-                        ? "No catch-up work is currently on today's working list."
-                        : isStudyDate(selectedDate, studyDays)
-                          ? "No task is assigned on this date."
-                          : "Rest and consolidation day. Missed work will move to the next available study day."
+                {!calendarDisplayTasks.length && <EmptyMessage>{
+                  rangeIsToday
+                    ? calendarTaskFilter === "original"
+                      ? "No task belongs to today's original plan."
+                      : calendarTaskFilter === "rescheduled"
+                        ? "No task from today's original plan has been rescheduled."
+                        : calendarTaskFilter === "catchup"
+                          ? "No catch-up work is currently on today's working list."
+                          : "No current task is on today's working list."
+                    : rangeBounds.from === rangeBounds.to
+                      ? isStudyDate(rangeBounds.from, studyDays)
+                        ? "No task is assigned on this date."
+                        : "Rest and consolidation day. Missed work will move to the next available study day."
+                      : "No current tasks are assigned in this date range."
                 }</EmptyMessage>}
               </div>
             </div>
-            <section className="panel range-analytics">
-              <div className="section-heading">
-                <div><span className="eyebrow">DATE-RANGE ACTIVITY</span><h2>Study activity from {fullDateLabel(rangeAnalytics.from)} to {fullDateLabel(rangeAnalytics.to)}</h2></div>
-                <div className="range-date-controls">
-                  <label>From date<input type="date" value={rangeFromDate} onChange={(event) => setRangeFromDate(event.target.value)} /></label>
-                  <label>To date<input type="date" value={rangeToDate} onChange={(event) => setRangeToDate(event.target.value)} /></label>
-                </div>
-              </div>
-              <div className="range-metrics" aria-label="Selected date range totals">
-                <article><button type="button" className={rangeTaskFilter === "assigned" ? "selected" : ""} onClick={() => setRangeTaskFilter("assigned")}><strong>{rangeAnalytics.assigned.length}</strong></button><span>Total Assigned Tasks</span><small>Click the number to view</small></article>
-                <article><button type="button" className={rangeTaskFilter === "pending" ? "selected" : ""} onClick={() => setRangeTaskFilter("pending")}><strong>{rangeAnalytics.pending.length}</strong></button><span>Task Still Pending</span><small>of {rangeAnalytics.assigned.length} assigned · click to view</small></article>
-                <article><button type="button" className={rangeTaskFilter === "completed" ? "selected" : ""} onClick={() => setRangeTaskFilter("completed")}><strong>{rangeAnalytics.completedInRange.length}</strong></button><span>Total Task Completed</span><small>Within selected dates · click to view</small></article>
-                <article><button type="button" className={rangeTaskFilter === "originalCompleted" ? "selected" : ""} onClick={() => setRangeTaskFilter("originalCompleted")}><strong>{rangeAnalytics.completedFromAssigned.length}</strong></button><span>Completed From Assigned Tasks</span><small>Completed on their assigned date · click to view</small></article>
-                <article><button type="button" className={rangeTaskFilter === "catchup" ? "selected" : ""} onClick={() => setRangeTaskFilter("catchup")}><strong>{rangeAnalytics.catchUp.length}</strong></button><span>From Catch-up</span><small>Completed later than original date · click to view</small></article>
-                <article><button type="button" className={rangeTaskFilter === "rescheduled" ? "selected" : ""} onClick={() => setRangeTaskFilter("rescheduled")}><strong>{rangeAnalytics.rescheduled.length}</strong></button><span>Rescheduled</span><small>Out of {rangeAnalytics.pending.length} pending tasks · click to view</small></article>
-              </div>
-              <div className="range-task-list">
-                <div className="section-heading"><div><span className="eyebrow">SELECTED TASKS</span><h3>{rangeTaskFilter === "assigned" ? "All assigned tasks" : rangeTaskFilter === "pending" ? "Pending tasks" : rangeTaskFilter === "completed" ? "All completed in range" : rangeTaskFilter === "originalCompleted" ? "Completed from assigned tasks" : rangeTaskFilter === "catchup" ? "Catch-up completed in range" : "Rescheduled tasks"}</h3></div><strong>{rangeAnalytics.visible.length} task{rangeAnalytics.visible.length === 1 ? "" : "s"}</strong></div>
-                {rangeAnalytics.visible.length ? rangeAnalytics.visible.map((task) => {
-                  const doneDate = settings[`planner.done.${task.id}`];
-                  return <article className="range-task-row" key={task.id}>
-                    <span><b>{task.stream}</b><strong>{task.lesson.title}</strong><small>{task.topic.code} · {task.topic.title}</small></span>
-                    <span className="range-task-status">{calendarTaskStatus(task)}{doneDate && task.originalDate !== doneDate ? <small>Original: {fullDateLabel(task.originalDate)} · Completed: {fullDateLabel(doneDate)}</small> : null}</span>
-                  </article>;
-                }) : <EmptyMessage>No tasks match this selection for the chosen date range.</EmptyMessage>}
-              </div>
-            </section>
             <div className="notification-settings panel"><div><span className="eyebrow">REMINDERS</span><h2>Study notification</h2><p>The browser will ask permission. On devices that restrict background web notifications, the LMS will still show overdue work when opened.</p></div><label>Reminder time<input type="time" value={settings.reminderTime} onChange={(event) => saveSetting("reminderTime", event.target.value)} /></label><button onClick={() => void enableReminders()}>{remindersEnabled ? "Send test notification" : "Enable notifications"}</button></div>
           </section>
         )}
@@ -1313,7 +1321,7 @@ export default function StudyDashboard({
           <section className="section-block no-top">
 
             <div className="panel today-syllabus-lessons">
-              <div className="section-heading"><div><span className="eyebrow">TODAY'S SYLLABUS LESSONS</span><h2>The exact work assigned today</h2></div><span className="quiet">These lesson names remain linked to their full Cambridge syllabus topics.</span></div>
+              <div className="section-heading"><div><span className="eyebrow">TODAY&apos;S SYLLABUS LESSONS</span><h2>The exact work assigned today</h2></div><span className="quiet">These lesson names remain linked to their full Cambridge syllabus topics.</span></div>
               <div className="today-checklist">{todayTasks.filter((task) => task.kind === "syllabus").map((task) => {
                 const checked = planner.completedTaskIds.has(task.id);
                 const checkOutcome = dailyCheckOutcomeByTask.get(task.id);
@@ -1464,7 +1472,7 @@ export default function StudyDashboard({
           </section>
         )}
 
-        {view === "parent" && <ParentView progressMap={progressMap} activity={familyState.activity} attempts={familyState.attempts} quizAttempts={familyState.quizAttempts} stats={stats} settings={settings} requiredDaily={requiredDaily} />}
+        {view === "parent" && <ParentView progressMap={progressMap} stageFor={progressStageFor} completedOn={completedOnFor} maintenanceTopicIds={maintenanceTopicIds} activity={familyState.activity} attempts={familyState.attempts} quizAttempts={familyState.quizAttempts} stats={stats} settings={settings} requiredDaily={requiredDaily} />}
       </main>
       {dailyQuizTaskId && <DailyQuizView taskId={dailyQuizTaskId} onClose={() => setDailyQuizTaskId(null)} onCompleted={handleDailyQuizCompleted} />}
     </div>
@@ -1499,18 +1507,45 @@ function QuizBankSyncCard() {
   return <div className="panel"><div className="section-heading"><div><span className="eyebrow">CONTROLLED QUIZ BANK</span><h2>Google Sheet publishing</h2></div><a href="https://docs.google.com/spreadsheets/d/1IFCOQogNrT9UhwzjLjIzZlLxwqVtQ8_NOsrQfrGSEXI/edit" target="_blank" rel="noreferrer">Open question editor</a></div><p>{status}</p><button type="button" onClick={() => void syncNow()} disabled={syncing}>{syncing ? "Checking..." : "Validate and sync approved rows"}</button><p className="panel-note">Only valid Approved rows publish. Questions are matched by task identity or exact topic and lesson title; unrelated lessons are never substituted. Draft and Reviewed rows stay unpublished. Any invalid Approved row cancels the import and preserves the working bank.</p></div>;
 }
 
-function ParentView({ progressMap, activity, attempts, quizAttempts, stats, settings, requiredDaily }: { progressMap: Map<string, ProgressItem>; activity: ActivityItem[]; attempts: AssessmentAttempt[]; quizAttempts: QuizAttemptItem[]; stats: Stats; settings: Record<string, string>; requiredDaily: number }) {
-  const recent = Array.from({ length: 7 }, (_, offset) => {
-    const date = new Date(); date.setDate(date.getDate() - (6 - offset));
-    const key = date.toISOString().slice(0, 10);
-    const rows = activity.filter((item) => item.createdAt.slice(0, 10) === key);
-    return { key, label: new Intl.DateTimeFormat("en-GB", { weekday: "short" }).format(date), minutes: rows.reduce((sum, item) => sum + (item.minutes ?? 0), 0) };
-  });
+type ParentSubjectStat = {
+  subject: SubjectName;
+  total: number;
+  mastered: number;
+  attemptCount: number;
+  average: number;
+  topError: string;
+  track: string;
+  effort: string;
+  workload: SubjectWorkload;
+};
+
+function ParentView({ progressMap, stageFor, completedOn, maintenanceTopicIds, activity, attempts, quizAttempts, stats, settings, requiredDaily }: { progressMap: Map<string, ProgressItem>; stageFor: (topic: Topic) => number; completedOn: (topic: Topic) => string | null; maintenanceTopicIds: ReadonlySet<string>; activity: ActivityItem[]; attempts: AssessmentAttempt[]; quizAttempts: QuizAttemptItem[]; stats: Stats; settings: Record<string, string>; requiredDaily: number }) {
+  const [showRecalls, setShowRecalls] = useState(false);
+  const [openSubject, setOpenSubject] = useState<SubjectName | null>(null);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportError, setReportError] = useState("");
+  const minutesByDay = useMemo(() => studyMinutesByDay(activity), [activity]);
+  const recent = lastDays(7).map((day) => ({ ...day, minutes: minutesByDay.get(day.key) ?? 0 }));
   const maxMinutes = Math.max(60, ...recent.map((day) => day.minutes));
-  const subjectStats = SUBJECTS.map((subject) => {
-    const topics = TOPICS.filter((topic) => topic.subject === subject);
-    const covered = topics.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) >= 1).length;
-    const mastered = topics.filter((topic) => (progressMap.get(topic.id)?.stage ?? 0) >= 3).length;
+  const subjectStats: ParentSubjectStat[] = SUBJECTS.map((subject) => {
+    const allTopics = TOPICS.filter((topic) => topic.subject === subject);
+    const topics = allTopics.filter((topic) => !maintenanceTopicIds.has(topic.id));
+    const row = (topic: Topic) => ({ id: topic.id, code: topic.code, unit: topic.unit, title: topic.title, minutes: topic.minutes, stage: stageFor(topic), completedOn: completedOn(topic) });
+    const covered = topics.filter((topic) => stageFor(topic) >= 1).map(row);
+    const remaining = topics.filter((topic) => stageFor(topic) < 1).map(row);
+    const totalMinutes = topics.reduce((sum, topic) => sum + topic.minutes, 0);
+    const coveredMinutes = covered.reduce((sum, topic) => sum + topic.minutes, 0);
+    const workload: SubjectWorkload = {
+      subject,
+      color: SUBJECT_META[subject].color,
+      totalMinutes,
+      coveredMinutes,
+      coveredPercent: totalMinutes ? Math.round((coveredMinutes / totalMinutes) * 100) : 0,
+      covered,
+      remaining,
+      maintenance: allTopics.filter((topic) => maintenanceTopicIds.has(topic.id)).map(row),
+    };
+    const mastered = topics.filter((topic) => stageFor(topic) >= 3).length;
     const subjectAttempts = attempts.filter((attempt) => attempt.subject === subject);
     const average = subjectAttempts.length
       ? Math.round(subjectAttempts.reduce((sum, attempt) => sum + percentage(attempt.score, attempt.maxScore), 0) / subjectAttempts.length)
@@ -1521,8 +1556,9 @@ function ParentView({ progressMap, activity, attempts, quizAttempts, stats, sett
         errorCounts.set(attempt.errorCategory, (errorCounts.get(attempt.errorCategory) ?? 0) + 1);
       }
     });
-    const topError = [...errorCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "Run diagnostic";
-    const secureRate = Math.round((mastered / topics.length) * 100);
+    const topError = [...errorCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
+      ?? (subjectAttempts.length ? "No repeated error" : "Run diagnostic");
+    const secureRate = topics.length ? Math.round((mastered / topics.length) * 100) : 0;
     const profile = SUBJECT_PROFILES[subject];
     const track = !subjectAttempts.length
       ? "Starting check needed"
@@ -1531,9 +1567,30 @@ function ParentView({ progressMap, activity, attempts, quizAttempts, stats, sett
         : average >= 70
           ? "Steady practice"
           : "Focused support";
-    return { subject, total: topics.length, covered, mastered, average, topError, track, profile };
+    // A real average of 0% is still evidence; only "no tests yet" means a starting check is needed.
+    const effort = subjectAttempts.length ? effortGuidance(average, topError).effort : "Starting check";
+    return { subject, total: topics.length, mastered, attemptCount: subjectAttempts.length, average, topError, track, effort, workload };
   });
-  const overdue = TOPICS.filter((topic) => isRevisionDue(progressMap.get(topic.id)));
+  const overdue: OverdueRecall[] = TOPICS.filter((topic) => isRevisionDue(progressMap.get(topic.id)))
+    .map((topic) => {
+      const item = progressMap.get(topic.id)!;
+      const daysSince = relativeAge(item.lastStudiedAt);
+      const waitDays = recallWaitDays(item.stage);
+      return {
+        id: topic.id,
+        subject: topic.subject,
+        subjectShort: SUBJECT_META[topic.subject].short,
+        subjectClass: subjectClass(topic.subject),
+        title: topic.title,
+        unit: topic.unit,
+        stage: item.stage,
+        lastStudiedAt: item.lastStudiedAt,
+        daysSince,
+        waitDays,
+        overdueBy: Math.max(0, daysSince - waitDays),
+      };
+    })
+    .sort((a, b) => b.overdueBy - a.overdueBy || a.subject.localeCompare(b.subject));
   const errorCounts = new Map<string, number>();
   attempts.forEach((attempt) => {
     if (attempt.errorCategory && attempt.errorCategory !== "No major error") {
@@ -1555,13 +1612,58 @@ function ParentView({ progressMap, activity, attempts, quizAttempts, stats, sett
     : adaptiveEvidence.wrong
       ? `${adaptiveEvidence.wrong} wrong answer${adaptiveEvidence.wrong === 1 ? "" : "s"} remain in the recent adaptive review queue.`
       : "No skipped or wrong adaptive-check evidence is currently waiting for attention.";
+  const dailyCheckCount = activity.filter((item) => item.kind === "daily-check").length;
+  const openWorkload = subjectStats.find((item) => item.subject === openSubject)?.workload;
+
+  async function downloadReport() {
+    setReportBusy(true);
+    setReportError("");
+    try {
+      const { downloadProgressReport } = await import("./progress-report-pdf");
+      await downloadProgressReport({
+        learnerName: "Talha",
+        targetDate: settings.targetDate,
+        metrics: [
+          { label: "Syllabus covered", value: `${stats.coverage}%`, note: `${stats.learned} of ${stats.total} topics` },
+          { label: "Evidence secure", value: `${stats.mastery}%`, note: `${stats.mastered} topics with proof` },
+          { label: "Evidence readiness", value: `${stats.readiness}%`, note: "not a predicted grade" },
+          { label: "Daily checks recorded", value: String(dailyCheckCount), note: `${stats.timedEvidence} timed exam attempts` },
+          { label: "Overdue recalls", value: String(overdue.length), note: "topics waiting for a recall check" },
+        ],
+        week: recent.map((day) => ({ label: day.longLabel, minutes: day.minutes })),
+        requiredDaily,
+        subjects: subjectStats.map((item) => ({
+          subject: item.subject,
+          workloadPercent: item.workload.coveredPercent,
+          secureText: `${item.total ? Math.round((item.mastered / item.total) * 100) : 0}% (${item.mastered}/${item.total})`,
+          effort: item.effort,
+          track: item.track,
+          topError: item.topError,
+          attempts: item.attemptCount,
+          average: item.attemptCount ? item.average : null,
+        })),
+        workloads: subjectStats.map((item) => item.workload),
+        overdue,
+        leadingErrors,
+        dailyChecks: recentDailyChecks.map((item) => ({ title: dailyCheckOutcome(item.note) ?? "Check completed", subject: item.subject ?? "Study lesson", date: dateLabel(item.createdAt), summary: dailyCheckSummary(item.note) })),
+        adaptive: { ...adaptiveEvidence, message: adaptiveMessage },
+      });
+    } catch (error) {
+      setReportError(error instanceof Error ? `Report could not be created: ${error.message}` : "Report could not be created.");
+    } finally {
+      setReportBusy(false);
+    }
+  }
+
   return <section className="parent-layout no-top">
     <QuizBankSyncCard />
-    <div className="metrics-row"><article><span>Syllabus covered</span><strong>{stats.coverage}%</strong><small>{stats.learned} of {stats.total} topics</small></article><article><span>Evidence Secure</span><strong>{stats.mastery}%</strong><small>{stats.mastered} topics with proof</small></article><article><span>Evidence readiness</span><strong>{stats.readiness}%</strong><small>not a predicted grade</small></article><article><span>Daily checks recorded</span><strong>{activity.filter((item) => item.kind === "daily-check").length}</strong><small>{stats.timedEvidence} timed exam attempts</small></article></div>
-    <div className="parent-grid"><div className="panel activity-panel"><div className="section-heading"><div><span className="eyebrow">LAST 7 DAYS</span><h2>Study consistency</h2></div><strong>{recent.reduce((sum, day) => sum + day.minutes, 0)} min</strong></div><div className="weekly-bars">{recent.map((day) => <div key={day.key}><div className="bar-track"><span style={{ height: `${Math.max(4, (day.minutes / maxMinutes) * 100)}%` }}><b>{day.minutes || ""}</b></span></div><small>{day.label}</small></div>)}</div><p className="panel-note">Daily target currently requires approximately <strong>{requiredDaily} minutes</strong> on each study day.</p></div>
-      <div className="panel alert-panel"><span className="eyebrow">PARENT ATTENTION</span><h2>{overdue.length ? `${overdue.length} recalls are overdue` : "Recall schedule is clear"}</h2>{leadingErrors.length ? <><p>Most frequent sources of lost marks:</p><ul>{leadingErrors.map(([error, count]) => <li key={error}><span>{count}×</span><div><strong>{error}</strong><small>Use the correction note, then re-test on a different date.</small></div></li>)}</ul></> : overdue.length ? <ul>{overdue.slice(0, 4).map((topic) => <li key={topic.id}><span className={subjectClass(topic.subject)}>{SUBJECT_META[topic.subject].short}</span><div><strong>{topic.title}</strong><small>Last studied {dateLabel(progressMap.get(topic.id)?.lastStudiedAt)}</small></div></li>)}</ul> : <p>Run the four subject diagnostics to reveal the first performance priorities.</p>}</div></div>
+    <div className="metrics-row"><article><span>Syllabus covered</span><strong>{stats.coverage}%</strong><small>{stats.learned} of {stats.total} topics</small></article><article><span>Evidence Secure</span><strong>{stats.mastery}%</strong><small>{stats.mastered} topics with proof</small></article><article><span>Evidence readiness</span><strong>{stats.readiness}%</strong><small>not a predicted grade</small></article><article><span>Daily checks recorded</span><strong>{dailyCheckCount}</strong><small>{stats.timedEvidence} timed exam attempts</small></article></div>
+    <div className="parent-grid"><div className="panel activity-panel"><div className="section-heading"><div><span className="eyebrow">LAST 7 DAYS</span><h2>Study consistency</h2></div><strong>{recent.reduce((sum, day) => sum + day.minutes, 0)} min</strong></div><div className="weekly-bars">{recent.map((day) => <div key={day.key} title={`${day.longLabel}: ${day.minutes} min`}><div className="bar-track"><span style={{ height: `${Math.max(4, (day.minutes / maxMinutes) * 100)}%` }}><b>{day.minutes || ""}</b></span></div><small>{day.label}</small></div>)}</div><p className="panel-note">Daily target currently requires approximately <strong>{requiredDaily} minutes</strong> on each study day.</p></div>
+      <div className="panel alert-panel"><span className="eyebrow">PARENT ATTENTION</span>{overdue.length ? <h2 className="recall-heading"><button type="button" className="recall-trigger" onClick={() => setShowRecalls(true)}>{overdue.length} recall{overdue.length === 1 ? " is" : "s are"} overdue<span>View list</span></button><InfoTip label="overdue recalls">{PARENT_GLOSSARY.recalls}</InfoTip></h2> : <h2>Recall schedule is clear</h2>}{leadingErrors.length ? <><p>Most frequent sources of lost marks:</p><ul>{leadingErrors.map(([error, count]) => <li key={error}><span>{count}×</span><div><strong>{error}</strong><small>Use the correction note, then re-test on a different date.</small></div></li>)}</ul></> : overdue.length ? <ul>{overdue.slice(0, 4).map((topic) => <li key={topic.id}><span className={topic.subjectClass}>{topic.subjectShort}</span><div><strong>{topic.title}</strong><small>Last studied {dateLabel(topic.lastStudiedAt)}</small></div></li>)}</ul> : <p>Run the four subject diagnostics to reveal the first performance priorities.</p>}</div></div>
     <div className="panel daily-check-history"><div className="section-heading"><div><span className="eyebrow">RECENT DAILY CHECKS</span><h2>What needs to happen next</h2></div><span className="quiet">Effort guidance—not grades</span></div><div className="daily-check-history-list">{recentDailyChecks.length ? recentDailyChecks.map((item) => <article key={item.id}><div><strong>{dailyCheckOutcome(item.note) ?? "Check completed"}</strong><small>{item.subject ?? "Study lesson"} · {dateLabel(item.createdAt)}</small></div><p>{dailyCheckSummary(item.note)}</p></article>) : <EmptyMessage>Daily-check guidance will appear here after Talha completes a lesson check.</EmptyMessage>}</div></div>
     <div className="panel adaptive-evidence-panel"><div className="section-heading"><div><span className="eyebrow">ADAPTIVE REVIEW QUEUE</span><h2>Wrong and skipped evidence</h2></div><strong>{adaptiveEvidence.needsReview} recent attempt{adaptiveEvidence.needsReview === 1 ? "" : "s"} need review</strong></div><div className="metrics-row compact"><article><span>Wrong</span><strong>{adaptiveEvidence.wrong}</strong><small>attempted but incorrect</small></article><article><span>Skipped</span><strong>{adaptiveEvidence.skipped}</strong><small>not attempted</small></article><article><span>Question selection</span><strong>Adaptive</strong><small>weak → unseen → seen</small></article><article><span>Next action</span><strong>{adaptiveEvidence.wrong || adaptiveEvidence.skipped ? "Re-test" : "Continue"}</strong><small>based on saved evidence</small></article></div><p className="panel-note">{adaptiveMessage}</p></div>
-    <div className="panel subject-table"><div className="section-heading"><div><span className="eyebrow">LEARNING SUPPORT TRACKER</span><h2>Progress, effort and next focus</h2></div><div className="backup-actions"><span className="quiet">Syllabus target: {fullDateLabel(settings.targetDate)}</span><a href="/api/backup">Download progress backup</a></div></div><div className="table-head"><span>Subject</span><span>Workload covered</span><span>Secure</span><span>Effort needed</span><span>Present need / next focus</span></div>{subjectStats.map((item) => { const topicMinutes = TOPICS.filter((topic) => topic.subject === item.subject).reduce((sum, topic) => sum + topic.minutes, 0); const coveredMinutes = TOPICS.filter((topic) => topic.subject === item.subject && (progressMap.get(topic.id)?.stage ?? 0) >= 1).reduce((sum, topic) => sum + topic.minutes, 0); const guidance = item.average ? effortGuidance(item.average, item.topError) : null; return <div className="table-row" key={item.subject}><strong><i style={{ background: SUBJECT_META[item.subject].color }} />{item.subject}</strong><span>{Math.round((coveredMinutes / topicMinutes) * 100)}% <small>weighted by time</small></span><span>{Math.round((item.mastered / item.total) * 100)}% <small>{item.mastered}/{item.total}</small></span><span>{guidance?.effort ?? "Starting check"}</span><span><b className={`track-pill ${item.track === "Secure progress" ? "good" : item.track === "Focused support" ? "low" : "mid"}`}>{item.track}</b><small>{item.topError}</small></span></div>; })}</div>
+    <div className="panel subject-table"><div className="section-heading"><div><span className="eyebrow">LEARNING SUPPORT TRACKER</span><h2>Progress, effort and next focus</h2></div><div className="backup-actions"><span className="quiet">Syllabus target: {fullDateLabel(settings.targetDate)}</span><button type="button" onClick={() => void downloadReport()} disabled={reportBusy}>{reportBusy ? "Preparing PDF..." : "Download progress report (PDF)"}</button><a className="secondary-link" href="/api/backup" title="Full data copy for restoring the LMS; not meant for reading">Data backup (JSON)</a></div></div>{reportError ? <p className="form-error" role="alert">{reportError}</p> : null}<div className="table-head"><span>Subject</span><span>Workload covered <InfoTip label="workload covered">{PARENT_GLOSSARY.workload}</InfoTip></span><span>Secure <InfoTip label="secure">{PARENT_GLOSSARY.secure}</InfoTip></span><span>Effort needed <InfoTip label="effort needed">{PARENT_GLOSSARY.effort}</InfoTip></span><span>Present need / next focus <InfoTip label="present need">{PARENT_GLOSSARY.track}</InfoTip></span></div>{subjectStats.map((item) => <div className="table-row" key={item.subject}><strong><button type="button" className="subject-link" onClick={() => setOpenSubject(item.subject)} aria-label={`${item.subject}: show covered and remaining topics`}><i style={{ background: SUBJECT_META[item.subject].color }} />{item.subject}</button></strong><span>{item.workload.coveredPercent}% <small>weighted by time</small></span><span>{item.total ? Math.round((item.mastered / item.total) * 100) : 0}% <small>{item.mastered}/{item.total}</small></span><span>{item.effort}{item.attemptCount ? <small>avg {item.average}% · {item.attemptCount} test{item.attemptCount === 1 ? "" : "s"}</small> : null}</span><span><b className={`track-pill ${item.track === "Secure progress" ? "good" : item.track === "Focused support" ? "low" : "mid"}`}>{item.track}</b><small>{item.topError}</small></span></div>)}</div>
+    {showRecalls ? <OverdueRecallsDialog recalls={overdue} explanation={PARENT_GLOSSARY.recalls} onClose={() => setShowRecalls(false)} /> : null}
+    {openWorkload ? <SubjectWorkloadDialog workload={openWorkload} onClose={() => setOpenSubject(null)} /> : null}
   </section>;
 }
